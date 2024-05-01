@@ -10,6 +10,9 @@ python = "^3.12"
 pyqt5 = "^5.15.10"
 
 
+[tool.poetry.group.dev.dependencies]
+py2app = "^0.28.7"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
