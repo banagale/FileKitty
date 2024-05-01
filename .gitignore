@@ -33,6 +33,8 @@ media/
 *.pyd
 
 # dirs
+build/*/*
+dist/*/*
 temp/
 temp_*/
 s3_local/
