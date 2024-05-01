@@ -35,7 +35,7 @@ class FilePicker(QWidget):
             concatenated_content = ""
             for file in files:
                 relative_path = os.path.relpath(file, start=common_prefix)
-                concatenated_content += f"### `{relative_path}`\n\n```text\n"
+                concatenated_content += f"### `{relative_path}`\n\n```\n"
                 with open(file, 'r', encoding='utf-8') as file:
                     content = file.read()
                     concatenated_content += content
