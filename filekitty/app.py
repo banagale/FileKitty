@@ -1,4 +1,5 @@
 from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit
+import os
 
 
 class FilePicker(QWidget):
@@ -11,22 +12,29 @@ class FilePicker(QWidget):
         layout = QVBoxLayout(self)
 
         self.textEdit = QTextEdit(self)
+        self.textEdit.setReadOnly(True)
         layout.addWidget(self.textEdit)
 
-        btnOpen = QPushButton('Open File', self)
-        btnOpen.clicked.connect(self.openFile)
+        btnOpen = QPushButton('Open Files', self)
+        btnOpen.clicked.connect(self.openFiles)
         layout.addWidget(btnOpen)
 
-    def openFile(self):
+    def openFiles(self):
         options = QFileDialog.Options()
         files, _ = QFileDialog.getOpenFileNames(self, "Select files to concatenate", "",
                                                 "All Files (*);;Text Files (*.txt)", options=options)
         if files:
+            common_prefix = os.path.commonpath(files)
+            # Move one directory up unless it's already the root directory
+            common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
             concatenated_content = ""
             for file in files:
-                with open(file, 'r') as file:
+                relative_path = os.path.relpath(file, start=common_prefix)
+                concatenated_content += f"### `{relative_path}`\n\n```text\n"
+                with open(file, 'r', encoding='utf-8') as file:
                     content = file.read()
-                    concatenated_content += content + "\n"
+                    concatenated_content += content
+                concatenated_content += "\n```\n\n"
             self.textEdit.setText(concatenated_content)
 
 
