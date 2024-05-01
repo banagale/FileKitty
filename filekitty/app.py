@@ -1,5 +1,9 @@
-from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit
 import os
+
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit
+
+ICON_PATH = 'assets/icon/FileKitty-icon.png'
 
 
 class FilePicker(QWidget):
@@ -8,7 +12,9 @@ class FilePicker(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle('File Picker and Concatenator')
+        self.setWindowTitle('FileKitty')
+        self.setWindowIcon(QIcon(ICON_PATH))
+
         layout = QVBoxLayout(self)
 
         self.textEdit = QTextEdit(self)
@@ -25,7 +31,6 @@ class FilePicker(QWidget):
                                                 "All Files (*);;Text Files (*.txt)", options=options)
         if files:
             common_prefix = os.path.commonpath(files)
-            # Move one directory up unless it's already the root directory
             common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
             concatenated_content = ""
             for file in files:
@@ -40,6 +45,7 @@ class FilePicker(QWidget):
 
 if __name__ == '__main__':
     app = QApplication([])
+    app.setWindowIcon(QIcon(ICON_PATH))
     ex = FilePicker()
     ex.show()
     app.exec_()
