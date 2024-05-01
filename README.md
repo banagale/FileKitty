@@ -15,6 +15,14 @@ A simple file selection and concatenation tool.
 - Concatenating files for use in a single file format
 - Pasting file contents into an LLM to provide context to a prompt
 
+## How to use it
+1. Open the app and click ***Open Files***.
+2. Select the files you want to concatenate:
+   <img src="https://github.com/banagale/FileKitty/assets/1409710/26d9557a-e625-4129-b95d-15a00be4ffc1">
+3. Click ***Open** and files will be added to the text area.
+4. Select, Copy to clipboard and paste into your prompt:
+   <img src="https://github.com/banagale/FileKitty/assets/1409710/8689d8cb-4228-4b55-af76-79a76464f65c">
+
 ## Build
 
 ### Prerequisites
