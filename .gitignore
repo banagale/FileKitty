@@ -1,0 +1,40 @@
+# .gitignore
+#
+# MacOS adds .DS_Store files
+.DS_Store
+
+# Python
+*.pyc
+__pycache__/
+venv/
+*.py[cod]
+*$py.class
+
+# Django
+*.log
+db.sqlite3
+media/
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.*.prod
+
+# Compiled Python modules
+*.pyc
+*.pyo
+*.pyd
+
+# dirs
+temp/
+temp_*/
+s3_local/
+inputs/
+outputs/
