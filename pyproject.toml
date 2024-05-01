@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "filekitty"
+version = "0.1.0"
+description = ""
+authors = ["banagale <robert@weave.bio>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pyqt5 = "^5.15.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
