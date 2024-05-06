@@ -2,6 +2,7 @@ import os
 
 from PyQt5.QtGui import QIcon, QGuiApplication
 from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit
+from PyQt5.QtWidgets import QListWidget
 
 ICON_PATH = 'assets/icon/FileKitty-icon.png'
 
@@ -17,9 +18,16 @@ class FilePicker(QWidget):
 
         layout = QVBoxLayout(self)
 
+        # Add a QListWidget to display the selected files
+        self.fileList = QListWidget(self)
+        layout.addWidget(self.fileList)
+
         self.textEdit = QTextEdit(self)
         self.textEdit.setReadOnly(True)
         layout.addWidget(self.textEdit)
+
+        layout.setStretchFactor(self.fileList, 1)
+        layout.setStretchFactor(self.textEdit, 2)
 
         btnOpen = QPushButton('📂  Select Files', self)
         btnOpen.clicked.connect(self.openFiles)
@@ -47,12 +55,17 @@ class FilePicker(QWidget):
         options = QFileDialog.Options()
         files, _ = QFileDialog.getOpenFileNames(self, "Select files to concatenate", "",
                                                 "All Files (*);;Text Files (*.txt)", options=options)
+
         if files:
+            # Clear the list widget and add the selected files
+            self.fileList.clear()
             common_prefix = os.path.commonpath(files)
             common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
             concatenated_content = ""
             for file in files:
                 relative_path = os.path.relpath(file, start=common_prefix)
+                self.fileList.addItem(relative_path)
+
                 concatenated_content += f"### `{relative_path}`\n\n```\n"
                 with open(file, 'r', encoding='utf-8') as file:
                     content = file.read()
