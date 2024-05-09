@@ -37,7 +37,7 @@ class FilePicker(QWidget):
         layout.addWidget(self.btnRefresh)
 
         layout.setStretchFactor(self.fileList, 1)
-        layout.setStretchFactor(self.textEdit, 2)
+        layout.setStretchFactor(self.textEdit, 3)
 
         btnOpen = QPushButton('📂  Select Files', self)
         btnOpen.clicked.connect(self.openFiles)
@@ -55,11 +55,14 @@ class FilePicker(QWidget):
 
         # Apply the calculated heights in the style sheets
         self.btnCopy.setStyleSheet(
-            "QPushButton {min-height: %dpx; border-radius: 10px; border: 2px solid #555;}" % increased_height)
+            "QPushButton {min-height: %dpx; border-radius: 10px; border: 2px solid #555;}"
+            "QPushButton:pressed {background-color: #ccc;}" % increased_height)
         btnOpen.setStyleSheet(
-            "QPushButton {min-height: %dpx; border-radius: 6px; border: 2px solid #555;}" % slightly_increased_height)
+            "QPushButton {min-height: %dpx; border-radius: 6px; border: 2px solid #555;}"
+            "QPushButton:pressed {background-color: #ccc;}" % slightly_increased_height)
         self.btnRefresh.setStyleSheet(
-            "QPushButton {min-height: %dpx; border-radius: 6px; border: 2px solid #555;}" % slightly_increased_height)
+            "QPushButton {min-height: %dpx; border-radius: 6px; border: 2px solid #555;}"
+            "QPushButton:pressed {background-color: #ccc;}" % slightly_increased_height)
         self.textEdit.textChanged.connect(self.updateCopyButtonState)
 
     def openFiles(self):
