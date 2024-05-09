@@ -30,6 +30,12 @@ class FilePicker(QWidget):
         self.lineCountLabel = QLabel('Lines ready to copy: 0', self)
         layout.addWidget(self.lineCountLabel)
 
+        # Refresh button to reload the files
+        self.btnRefresh = QPushButton('🔄 Refresh Text from Files', self)
+        self.btnRefresh.clicked.connect(self.refreshFiles)
+        self.btnRefresh.setEnabled(False)
+        layout.addWidget(self.btnRefresh)
+
         layout.setStretchFactor(self.fileList, 1)
         layout.setStretchFactor(self.textEdit, 2)
 
@@ -52,16 +58,20 @@ class FilePicker(QWidget):
             "QPushButton {min-height: %dpx; border-radius: 10px; border: 2px solid #555;}" % increased_height)
         btnOpen.setStyleSheet(
             "QPushButton {min-height: %dpx; border-radius: 6px; border: 2px solid #555;}" % slightly_increased_height)
-
+        self.btnRefresh.setStyleSheet(
+            "QPushButton {min-height: %dpx; border-radius: 6px; border: 2px solid #555;}" % slightly_increased_height)
         self.textEdit.textChanged.connect(self.updateCopyButtonState)
 
     def openFiles(self):
         options = QFileDialog.Options()
         files, _ = QFileDialog.getOpenFileNames(self, "Select files to concatenate", "",
                                                 "All Files (*);;Text Files (*.txt)", options=options)
-
         if files:
             self.fileList.clear()
+            self.currentFiles = files
+            self.refreshFiles()
+            self.btnRefresh.setEnabled(True)  # Enable the refresh button
+
             common_prefix = os.path.commonpath(files)
             common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
             concatenated_content = ""
@@ -84,6 +94,22 @@ class FilePicker(QWidget):
         line_count = text.count('\n') + 1 if text else 0
         self.lineCountLabel.setText(f'Lines ready to copy: {line_count}')
         self.btnCopy.setEnabled(bool(text))
+        self.btnRefresh.setEnabled(bool(text))
+
+    def refreshFiles(self):
+        if hasattr(self, 'currentFiles') and self.currentFiles:
+            common_prefix = os.path.commonpath(self.currentFiles)
+            common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
+            concatenated_content = ""
+            for file_path in self.currentFiles:
+                relative_path = os.path.relpath(file_path, start=common_prefix)
+                concatenated_content += f"### `{relative_path}`\n\n```\n"
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+                    concatenated_content += content
+                concatenated_content += "\n```\n\n"
+            concatenated_content = concatenated_content.rstrip()
+            self.textEdit.setText(concatenated_content)
 
 
 if __name__ == '__main__':
