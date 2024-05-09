@@ -1,7 +1,7 @@
 import os
 
 from PyQt5.QtGui import QIcon, QGuiApplication
-from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit
+from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit, QLabel
 from PyQt5.QtWidgets import QListWidget
 
 ICON_PATH = 'assets/icon/FileKitty-icon.png'
@@ -25,6 +25,10 @@ class FilePicker(QWidget):
         self.textEdit = QTextEdit(self)
         self.textEdit.setReadOnly(True)
         layout.addWidget(self.textEdit)
+
+        # Line count label
+        self.lineCountLabel = QLabel('Lines ready to copy: 0', self)
+        layout.addWidget(self.lineCountLabel)
 
         layout.setStretchFactor(self.fileList, 1)
         layout.setStretchFactor(self.textEdit, 2)
@@ -57,7 +61,6 @@ class FilePicker(QWidget):
                                                 "All Files (*);;Text Files (*.txt)", options=options)
 
         if files:
-            # Clear the list widget and add the selected files
             self.fileList.clear()
             common_prefix = os.path.commonpath(files)
             common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
@@ -72,13 +75,15 @@ class FilePicker(QWidget):
                     concatenated_content += content
                 concatenated_content += "\n```\n\n"
             self.textEdit.setText(concatenated_content)
-
     def copyToClipboard(self):
         clipboard = QGuiApplication.clipboard()
         clipboard.setText(self.textEdit.toPlainText())
 
     def updateCopyButtonState(self):
-        self.btnCopy.setEnabled(bool(self.textEdit.toPlainText()))
+        text = self.textEdit.toPlainText()
+        line_count = text.count('\n') + 1 if text else 0
+        self.lineCountLabel.setText(f'Lines ready to copy: {line_count}')
+        self.btnCopy.setEnabled(bool(text))
 
 
 if __name__ == '__main__':
