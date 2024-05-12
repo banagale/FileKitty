@@ -1,12 +1,10 @@
 import os
-
 from PyQt5.QtCore import QSettings
 from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence
-from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit, QLabel, \
-    QListWidget, QDialog, QLineEdit, QHBoxLayout, QAction
+from PyQt5.QtWidgets import (QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
+                             QLabel, QListWidget, QDialog, QLineEdit, QHBoxLayout, QAction, QMenuBar, QMenu)
 
 ICON_PATH = 'assets/icon/FileKitty-icon.png'
-
 
 class PreferencesDialog(QDialog):
     def __init__(self, parent=None):
@@ -38,7 +36,6 @@ class PreferencesDialog(QDialog):
         self.setLayout(layout)
 
     def browsePath(self):
-        # Opens a dialog to choose a directory
         dir_path = QFileDialog.getExistingDirectory(self, "Select Default Directory")
         if dir_path:
             self.pathEdit.setText(dir_path)
@@ -49,17 +46,17 @@ class PreferencesDialog(QDialog):
     def set_path(self, path):
         self.pathEdit.setText(path)
 
-
 class FilePicker(QWidget):
     def __init__(self):
         super().__init__()
-        self.initUI()
-        self.createActions()
-
-    def initUI(self):
         self.setWindowTitle('FileKitty')
         self.setWindowIcon(QIcon(ICON_PATH))
+        self.setGeometry(100, 100, 800, 600)
+        self.initUI()
+        self.createActions()
+        self.createMenu()
 
+    def initUI(self):
         layout = QVBoxLayout(self)
 
         self.fileList = QListWidget(self)
@@ -89,9 +86,15 @@ class FilePicker(QWidget):
         self.textEdit.textChanged.connect(self.updateCopyButtonState)
 
     def createActions(self):
-        self.prefAction = QAction("Preferences", self, shortcut=QKeySequence("Ctrl+,"))
+        self.prefAction = QAction("Preferences", self)
+        self.prefAction.setShortcut(QKeySequence("Ctrl+,"))
         self.prefAction.triggered.connect(self.showPreferences)
-        self.addAction(self.prefAction)
+
+    def createMenu(self):
+        menubar = QMenuBar(self)
+        appMenu = menubar.addMenu('FileKitty')
+        appMenu.addAction(self.prefAction)
+        self.layout().setMenuBar(menubar)
 
     def showPreferences(self):
         dialog = PreferencesDialog(self)
@@ -118,20 +121,22 @@ class FilePicker(QWidget):
             self.currentFiles = files
             self.refreshFiles()
             self.btnRefresh.setEnabled(True)
-
-            common_prefix = os.path.commonpath(files)
-            common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
-            concatenated_content = ""
-            for file in files:
-                relative_path = os.path.relpath(file, start=common_prefix)
-                self.fileList.addItem(relative_path)
-
-                concatenated_content += f"### `{relative_path}`\n\n```\n"
-                with open(file, 'r', encoding='utf-8') as file:
-                    content = file.read()
-                    concatenated_content += content
-                concatenated_content += "\n```\n\n"
+            concatenated_content = self.concatenate_files(files)
             self.textEdit.setText(concatenated_content)
+
+    def concatenate_files(self, files):
+        common_prefix = os.path.commonpath(files)
+        common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
+        concatenated_content = ""
+        for file in files:
+            relative_path = os.path.relpath(file, start=common_prefix)
+            self.fileList.addItem(relative_path)
+            concatenated_content += f"### `{relative_path}`\n\n```\n"
+            with open(file, 'r', encoding='utf-8') as file:
+                content = file.read()
+                concatenated_content += content
+            concatenated_content += "\n```\n\n"
+        return concatenated_content.rstrip()
 
     def copyToClipboard(self):
         clipboard = QGuiApplication.clipboard()
@@ -142,23 +147,11 @@ class FilePicker(QWidget):
         line_count = text.count('\n') + 1 if text else 0
         self.lineCountLabel.setText(f'Lines ready to copy: {line_count}')
         self.btnCopy.setEnabled(bool(text))
-        self.btnRefresh.setEnabled(bool(text))
 
     def refreshFiles(self):
         if hasattr(self, 'currentFiles') and self.currentFiles:
-            common_prefix = os.path.commonpath(self.currentFiles)
-            common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
-            concatenated_content = ""
-            for file_path in self.currentFiles:
-                relative_path = os.path.relpath(file_path, start=common_prefix)
-                concatenated_content += f"### `{relative_path}`\n\n```\n"
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    content = file.read()
-                    concatenated_content += content
-                concatenated_content += "\n```\n\n"
-            concatenated_content = concatenated_content.rstrip()
+            concatenated_content = self.concatenate_files(self.currentFiles)
             self.textEdit.setText(concatenated_content)
-
 
 if __name__ == '__main__':
     app = QApplication([])
