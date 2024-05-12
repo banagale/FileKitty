@@ -1,5 +1,6 @@
 import os
 from PyQt5.QtCore import QSettings
+from PyQt5 import QtCore
 from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence
 from PyQt5.QtWidgets import (QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
                              QLabel, QListWidget, QDialog, QLineEdit, QHBoxLayout, QAction, QMenuBar, QMenu)
@@ -74,7 +75,7 @@ class FilePicker(QWidget):
         self.btnRefresh.setEnabled(False)
         layout.addWidget(self.btnRefresh)
 
-        btnOpen = QPushButton('📂 Select Files', self)
+        btnOpen = QPushButton('📂 Select Files...', self)
         btnOpen.clicked.connect(self.openFiles)
         layout.addWidget(btnOpen)
 
@@ -89,13 +90,29 @@ class FilePicker(QWidget):
         self.prefAction = QAction("Preferences", self)
         self.prefAction.setShortcut(QKeySequence("Ctrl+,"))
         self.prefAction.triggered.connect(self.showPreferences)
+        self.selectFilesAction = QAction("Select Files...", self)
+        self.selectFilesAction.setShortcut(QKeySequence("Ctrl+O"))  # Use "Cmd+O" on macOS
+        self.selectFilesAction.triggered.connect(self.openFiles)
+        self.refreshFilesAction = QAction("Refresh Text from Files", self)
+        self.refreshFilesAction.setShortcut(QKeySequence("Ctrl+R"))
+        self.refreshFilesAction.triggered.connect(self.refreshFiles)
 
     def createMenu(self):
         menubar = QMenuBar(self)
+
+        # Application menu
         appMenu = menubar.addMenu('FileKitty')
         appMenu.addAction(self.prefAction)
-        self.layout().setMenuBar(menubar)
 
+        # File menu
+        fileMenu = menubar.addMenu("File")
+        fileMenu.addAction(self.selectFilesAction)
+
+        # Edit menu
+        editMenu = menubar.addMenu("Edit")
+        editMenu.addAction(self.refreshFilesAction)  # Correct action for the Edit menu
+
+        self.layout().setMenuBar(menubar)
     def showPreferences(self):
         dialog = PreferencesDialog(self)
         dialog.set_path(self.get_default_path())
@@ -117,12 +134,28 @@ class FilePicker(QWidget):
         files, _ = QFileDialog.getOpenFileNames(self, "Select files to concatenate", default_path,
                                                 "All Files (*);;Text Files (*.txt)", options=options)
         if files:
-            self.fileList.clear()
+            self.fileList.clear()  # Clear the existing list only if new files are selected
             self.currentFiles = files
-            self.refreshFiles()
+            self.updateFileList()  # Call a method to update the list widget and text area
             self.btnRefresh.setEnabled(True)
             concatenated_content = self.concatenate_files(files)
             self.textEdit.setText(concatenated_content)
+
+    def updateFileList(self):
+        self.fileList.clear()  # Ensure list is clear to avoid duplication
+        concatenated_content = ""
+        for file in self.currentFiles:
+            relative_path = os.path.relpath(file, start=os.path.commonpath(self.currentFiles))
+            if not self.fileList.findItems(relative_path, QtCore.Qt.MatchExactly):
+                self.fileList.addItem(relative_path)  # Add file to the list if not already added
+
+            concatenated_content += f"### `{relative_path}`\n\n```\n"
+            with open(file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                concatenated_content += content
+            concatenated_content += "\n```\n\n"
+        self.textEdit.setText(concatenated_content)
+
 
     def concatenate_files(self, files):
         common_prefix = os.path.commonpath(files)
@@ -150,8 +183,8 @@ class FilePicker(QWidget):
 
     def refreshFiles(self):
         if hasattr(self, 'currentFiles') and self.currentFiles:
-            concatenated_content = self.concatenate_files(self.currentFiles)
-            self.textEdit.setText(concatenated_content)
+            self.updateFileList()  # Call updateFileList to refresh the content
+
 
 if __name__ == '__main__':
     app = QApplication([])
