@@ -1,10 +1,15 @@
 import os
+
 from PyQt5.QtCore import QSettings
-from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence
+from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence, QDragEnterEvent, QDropEvent
 from PyQt5.QtWidgets import (QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
-                             QLabel, QListWidget, QDialog, QLineEdit, QHBoxLayout, QAction, QMenuBar, QMenu)
+                             QLabel, QListWidget, QDialog, QLineEdit, QHBoxLayout, QAction, QMenuBar)
+from PyQt5.QtWidgets import QGraphicsColorizeEffect
 
 ICON_PATH = 'assets/icon/FileKitty-icon.png'
+
 
 class PreferencesDialog(QDialog):
     def __init__(self, parent=None):
@@ -46,12 +51,14 @@ class PreferencesDialog(QDialog):
     def set_path(self, path):
         self.pathEdit.setText(path)
 
+
 class FilePicker(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('FileKitty')
         self.setWindowIcon(QIcon(ICON_PATH))
         self.setGeometry(100, 100, 800, 600)
+        self.setAcceptDrops(True)
         self.initUI()
         self.createActions()
         self.createMenu()
@@ -152,6 +159,42 @@ class FilePicker(QWidget):
         if hasattr(self, 'currentFiles') and self.currentFiles:
             concatenated_content = self.concatenate_files(self.currentFiles)
             self.textEdit.setText(concatenated_content)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasUrls():
+            files = []
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    files.append(url.toLocalFile())
+            if files:
+                self.fileList.clear()
+                self.currentFiles = files
+                self.refreshFiles()
+                self.btnRefresh.setEnabled(True)
+                self.animateDropSuccess()
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def applyBrightnessEffect(self):
+        self.effect = QGraphicsColorizeEffect(self)
+        self.effect.setColor(Qt.darkBlue)
+        self.effect.setStrength(0.25)
+        self.setGraphicsEffect(self.effect)
+
+    def removeBrightnessEffect(self):
+        self.setGraphicsEffect(None)
+
+    def animateDropSuccess(self):
+        self.applyBrightnessEffect()
+        QTimer.singleShot(100, self.removeBrightnessEffect)
+
 
 if __name__ == '__main__':
     app = QApplication([])
