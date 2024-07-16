@@ -126,7 +126,7 @@ class FilePicker(QWidget):
 
     def concatenate_files(self, files):
         common_prefix = os.path.commonpath(files)
-        common_prefix = os.path.dirname(common_prefix) if os.path.dirname(common_prefix) else common_prefix
+        common_prefix = os.path.dirname(os.path.dirname(os.path.dirname(common_prefix)))
         concatenated_content = ""
         for file in files:
             relative_path = os.path.relpath(file, start=common_prefix)
