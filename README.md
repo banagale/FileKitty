@@ -23,6 +23,13 @@ A simple file selection and concatenation tool.
 4. Select, Copy to clipboard and paste into your prompt:
    <img src="https://github.com/user-attachments/assets/d5a97ee1-4981-4222-bb1f-3993bff9adcb" width="441">
 
+**OR** 
+
+1. In MacOS Finder, find the files you want to concatenate
+2. Open the FileKitty app
+3. Drag and drop the files into the app
+4. Select, Copy to clipboard and paste into your prompt
+
 ## Build
 
 ### Prerequisites
