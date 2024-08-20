@@ -26,27 +26,36 @@ class PreferencesDialog(QDialog):
 
 
 class SelectClassesFunctionsDialog(QDialog):
-    def __init__(self, classes, functions, selected_items=None, parent=None):
+    def __init__(self, all_classes, all_functions, selected_items=None, parent=None):
         super(SelectClassesFunctionsDialog, self).__init__(parent)
         self.setWindowTitle('Select Classes/Functions')
-        self.classes = classes
-        self.functions = functions
+        self.all_classes = all_classes
+        self.all_functions = all_functions
         self.selected_items = selected_items if selected_items is not None else []
+        self.resize(600, 400)  # Set width to 600px and height to 400px
         self.initUI()
 
     def initUI(self):
         layout = QVBoxLayout(self)
 
         self.fileList = QListWidget(self)
-        for cls in self.classes:
-            item = QListWidgetItem(f"Class: {cls}")
-            item.setCheckState(Qt.Checked if cls in self.selected_items else Qt.Unchecked)
-            self.fileList.addItem(item)
+        for file_path, classes in self.all_classes.items():
+            file_header = QListWidgetItem(f"File: {os.path.basename(file_path)} (Classes)")
+            file_header.setFlags(file_header.flags() & ~Qt.ItemIsSelectable)
+            self.fileList.addItem(file_header)
+            for cls in classes:
+                item = QListWidgetItem(f"Class: {cls}")
+                item.setCheckState(Qt.Checked if cls in self.selected_items else Qt.Unchecked)
+                self.fileList.addItem(item)
 
-        for func in self.functions:
-            item = QListWidgetItem(f"Function: {func}")
-            item.setCheckState(Qt.Checked if func in self.selected_items else Qt.Unchecked)
-            self.fileList.addItem(item)
+        for file_path, functions in self.all_functions.items():
+            file_header = QListWidgetItem(f"File: {os.path.basename(file_path)} (Functions)")
+            file_header.setFlags(file_header.flags() & ~Qt.ItemIsSelectable)
+            self.fileList.addItem(file_header)
+            for func in functions:
+                item = QListWidgetItem(f"Function: {func}")
+                item.setCheckState(Qt.Checked if func in self.selected_items else Qt.Unchecked)
+                self.fileList.addItem(item)
 
         layout.addWidget(self.fileList)
 
@@ -136,10 +145,11 @@ class FilePicker(QWidget):
             self.currentFiles = files
             self.fileList.clear()
             for file in files:
-                self.fileList.addItem(file)
+                sanitized_path = self.sanitize_path(file)
+                self.fileList.addItem(sanitized_path)
 
-            # Check if all selected files are Python files to enable the class/function selection
-            if all(file.endswith(('.py',)) for file in files):
+            # Enable or disable the "Select Classes/Functions" button based on whether all selected files are Python files
+            if all(file.endswith('.py') for file in files):
                 self.btnSelectClassesFunctions.setEnabled(True)
             else:
                 self.btnSelectClassesFunctions.setEnabled(False)
@@ -147,10 +157,17 @@ class FilePicker(QWidget):
             self.updateTextEdit()
 
     def selectClassesFunctions(self):
-        if self.currentFiles:
-            file_path = self.currentFiles[0]
-            classes, functions, _, file_content = parse_python_file(file_path)
-            dialog = SelectClassesFunctionsDialog(classes, functions, self.selected_items, self)
+        """Allow selection of classes/functions from all selected Python files."""
+        all_classes = {}
+        all_functions = {}
+        for file_path in self.currentFiles:
+            if file_path.endswith('.py'):
+                classes, functions, _, _ = parse_python_file(file_path)
+                all_classes[file_path] = classes
+                all_functions[file_path] = functions
+
+        if all_classes or all_functions:
+            dialog = SelectClassesFunctionsDialog(all_classes, all_functions, self.selected_items, self)
             if dialog.exec_():
                 self.selected_items = dialog.get_selected_items()
                 self.updateTextEdit()
@@ -165,22 +182,38 @@ class FilePicker(QWidget):
         self.lineCountLabel.setText(f'Lines ready to copy: {line_count}')
         self.btnCopy.setEnabled(bool(text))
 
+    def sanitize_path(self, file_path):
+        """Remove sensitive directory information from file paths."""
+        parts = file_path.split(os.sep)
+        if "Users" in parts:
+            user_index = parts.index("Users")
+            # Remove the "Users" directory and the one immediately following it (likely the username)
+            sanitized_parts = parts[:user_index] + parts[user_index + 2:]
+            return os.sep.join(sanitized_parts)
+        return file_path
+
     def updateTextEdit(self):
-        if self.currentFiles:
-            file_path = self.currentFiles[0]
+        """Update the main text area with the content of all selected files."""
+        combined_code = ""
+        for file_path in self.currentFiles:
+            sanitized_path = self.sanitize_path(file_path)
             if file_path.endswith('.py'):
-                _, _, imports, file_content = parse_python_file(file_path)
+                classes, functions, imports, file_content = parse_python_file(file_path)
                 if not self.selected_items:
-                    code = f"# {os.path.basename(file_path)}\n\n```python\n{file_content}\n```"
+                    # If no specific classes/functions are selected, show the entire file content
+                    combined_code += f"# {os.path.basename(sanitized_path)}\n\n```python\n{file_content}\n```\n"
                 else:
-                    code = extract_code_and_imports(file_content, self.selected_items, file_path)
+                    # Show only the selected classes/functions
+                    filtered_code = extract_code_and_imports(file_content, self.selected_items, file_path)
+                    if filtered_code.strip():  # Only add if there is content to show
+                        combined_code += filtered_code.replace(file_path, sanitized_path)
             else:
-                # For non-Python files, simply show the entire file content
+                # For non-Python files, simply append the entire file content
                 with open(file_path, 'r', encoding='utf-8') as file:
                     file_content = file.read()
-                    code = f"# {os.path.basename(file_path)}\n\n```{self.detect_language(file_path)}\n{file_content}\n```"
+                    combined_code += f"# {os.path.basename(sanitized_path)}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
 
-            self.textEdit.setText(code)
+        self.textEdit.setText(combined_code)
 
     def detect_language(self, file_path):
         """Detect the language based on the file extension for syntax highlighting in markdown."""
@@ -237,7 +270,11 @@ def extract_code_and_imports(file_content, selected_items, file_path):
             reference_path = f"{file_path.replace('/', '.')}.{node.name}"
             selected_code.append(f"### `{reference_path}`\n\n```python\n{code_block}\n```\n")
 
-    return f"{header}\n```python\n{imports_str}\n```\n\n" + "\n".join(selected_code)
+    if selected_code:
+        return f"{header}\n```python\n{imports_str}\n```\n\n" + "\n".join(selected_code)
+    else:
+        # If no classes/functions are selected in this file, return an empty string
+        return ""
 
 
 if __name__ == '__main__':
