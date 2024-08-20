@@ -1,11 +1,11 @@
 import ast
 import os
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSettings
 from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
-    QLabel, QListWidget, QDialog, QAction, QMenuBar
+    QLabel, QListWidget, QDialog, QAction, QMenuBar, QLineEdit, QHBoxLayout
 )
 from PyQt5.QtWidgets import (
     QListWidgetItem
@@ -21,8 +21,43 @@ class PreferencesDialog(QDialog):
         self.initUI()
 
     def initUI(self):
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout()
+
+        self.pathEdit = QLineEdit(self)
+        self.pathEdit.setPlaceholderText("Enter or select default file path...")
+        layout.addWidget(self.pathEdit)
+
+        btnBrowse = QPushButton("Browse...")
+        btnBrowse.clicked.connect(self.browsePath)
+        layout.addWidget(btnBrowse)
+
+        btnLayout = QHBoxLayout()
+        btnSave = QPushButton('Save')
+        btnCancel = QPushButton('Cancel')
+        btnLayout.addWidget(btnSave)
+        btnLayout.addWidget(btnCancel)
+
+        btnSave.clicked.connect(self.accept)
+        btnCancel.clicked.connect(self.reject)
+
+        layout.addLayout(btnLayout)
         self.setLayout(layout)
+
+    def browsePath(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "Select Default Directory")
+        if dir_path:
+            self.pathEdit.setText(dir_path)
+
+    def get_path(self):
+        return self.pathEdit.text()
+
+    def set_path(self, path):
+        self.pathEdit.setText(path)
+
+    def accept(self):
+        settings = QSettings('YourCompany', 'FileKitty')
+        settings.setValue('defaultPath', self.get_path())
+        super().accept()
 
 
 class SelectClassesFunctionsDialog(QDialog):
@@ -82,11 +117,15 @@ class FilePicker(QWidget):
         self.setWindowTitle('FileKitty')
         self.setWindowIcon(QIcon(ICON_PATH))
         self.setGeometry(100, 100, 800, 600)
+        self.setAcceptDrops(True)
         self.selected_items = []  # Track selected items
         self.currentFiles = []  # Track current files
         self.initUI()
         self.createActions()
         self.createMenu()
+
+        # Load the default path on startup
+        self.default_path = self.get_default_path()
 
     def initUI(self):
         layout = QVBoxLayout(self)
@@ -132,12 +171,24 @@ class FilePicker(QWidget):
 
     def showPreferences(self):
         dialog = PreferencesDialog(self)
-        dialog.exec_()
+        dialog.set_path(self.get_default_path())
+        if dialog.exec_():  # If the dialog is accepted
+            new_path = dialog.get_path()
+            self.set_default_path(new_path)
+
+    def get_default_path(self):
+        settings = QSettings('YourCompany', 'FileKitty')
+        return settings.value('defaultPath', '')
+
+    def set_default_path(self, path):
+        settings = QSettings('YourCompany', 'FileKitty')
+        settings.setValue('defaultPath', path)
 
     def openFiles(self):
+        default_path = self.get_default_path() or ""
         options = QFileDialog.Options()
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Select files to analyze", "",
+            self, "Select files to analyze", default_path,
             "All Files (*);;Python Files (*.py);;JavaScript Files (*.js);;TypeScript Files (*.ts *.tsx)",
             options=options
         )
@@ -248,6 +299,7 @@ def parse_python_file(file_path):
 
     return classes, functions, imports, file_content
 
+
 def sanitize_path(file_path):
     """Remove sensitive directory information from file paths."""
     parts = file_path.split(os.sep)
@@ -257,6 +309,7 @@ def sanitize_path(file_path):
         sanitized_parts = parts[:user_index] + parts[user_index + 2:]
         return os.sep.join(sanitized_parts)
     return file_path
+
 
 def extract_code_and_imports(file_content, selected_items, sanitized_path):
     tree = ast.parse(file_content)
@@ -279,7 +332,7 @@ def extract_code_and_imports(file_content, selected_items, sanitized_path):
             selected_code.append(f"### `{reference_path}`\n\n```python\n{code_block}\n```\n")
 
     if selected_code:
-        return f"{header}\n```python\n{imports_str}\n```\n\n" + "\n".join(selected_code)
+        return f"{header}\n```python\n{imports_str}\n```\n\n" + "\n.join(selected_code)"
     else:
         # If no classes/functions are selected in this file, return an empty string
         return ""
