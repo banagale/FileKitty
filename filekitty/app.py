@@ -1,11 +1,11 @@
 import ast
 import os
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence, QDragEnterEvent, QDropEvent
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
-    QLabel, QListWidget, QDialog, QAction, QMenuBar
+    QLabel, QListWidget, QDialog, QAction, QMenuBar, QGraphicsColorizeEffect
 )
 from PyQt5.QtWidgets import (
     QListWidgetItem
@@ -82,6 +82,7 @@ class FilePicker(QWidget):
         self.setWindowTitle('FileKitty')
         self.setWindowIcon(QIcon(ICON_PATH))
         self.setGeometry(100, 100, 800, 600)
+        self.setAcceptDrops(True)  # Enable drag-and-drop functionality
         self.selected_items = []  # Track selected items
         self.currentFiles = []  # Track current files
         self.initUI()
@@ -224,6 +225,41 @@ class FilePicker(QWidget):
         else:
             return 'plaintext'
 
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasUrls():
+            files = []
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    files.append(url.toLocalFile())
+            if files:
+                self.fileList.clear()
+                self.currentFiles = files
+                self.updateTextEdit()
+                self.btnSelectClassesFunctions.setEnabled(True)
+                self.animateDropSuccess()
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def applyBrightnessEffect(self):
+        self.effect = QGraphicsColorizeEffect(self)
+        self.effect.setColor(Qt.darkBlue)
+        self.effect.setStrength(0.25)
+        self.setGraphicsEffect(self.effect)
+
+    def removeBrightnessEffect(self):
+        self.setGraphicsEffect(None)
+
+    def animateDropSuccess(self):
+        self.applyBrightnessEffect()
+        QTimer.singleShot(100, self.removeBrightnessEffect)
+
 
 def parse_python_file(file_path):
     try:
@@ -248,6 +284,7 @@ def parse_python_file(file_path):
 
     return classes, functions, imports, file_content
 
+
 def sanitize_path(file_path):
     """Remove sensitive directory information from file paths."""
     parts = file_path.split(os.sep)
@@ -257,6 +294,7 @@ def sanitize_path(file_path):
         sanitized_parts = parts[:user_index] + parts[user_index + 2:]
         return os.sep.join(sanitized_parts)
     return file_path
+
 
 def extract_code_and_imports(file_content, selected_items, sanitized_path):
     tree = ast.parse(file_content)
