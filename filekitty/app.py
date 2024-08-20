@@ -201,17 +201,17 @@ class FilePicker(QWidget):
                 classes, functions, imports, file_content = parse_python_file(file_path)
                 if not self.selected_items:
                     # If no specific classes/functions are selected, show the entire file content
-                    combined_code += f"# {os.path.basename(sanitized_path)}\n\n```python\n{file_content}\n```\n"
+                    combined_code += f"# {sanitized_path}\n\n```python\n{file_content}\n```\n"
                 else:
                     # Show only the selected classes/functions
-                    filtered_code = extract_code_and_imports(file_content, self.selected_items, file_path)
+                    filtered_code = extract_code_and_imports(file_content, self.selected_items, sanitized_path)
                     if filtered_code.strip():  # Only add if there is content to show
-                        combined_code += filtered_code.replace(file_path, sanitized_path)
+                        combined_code += filtered_code
             else:
                 # For non-Python files, simply append the entire file content
                 with open(file_path, 'r', encoding='utf-8') as file:
                     file_content = file.read()
-                    combined_code += f"# {os.path.basename(sanitized_path)}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
+                    combined_code += f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
 
         self.textEdit.setText(combined_code)
 
@@ -248,8 +248,17 @@ def parse_python_file(file_path):
 
     return classes, functions, imports, file_content
 
+def sanitize_path(file_path):
+    """Remove sensitive directory information from file paths."""
+    parts = file_path.split(os.sep)
+    if "Users" in parts:
+        user_index = parts.index("Users")
+        # Remove the "Users" directory and the one immediately following it (likely the username)
+        sanitized_parts = parts[:user_index] + parts[user_index + 2:]
+        return os.sep.join(sanitized_parts)
+    return file_path
 
-def extract_code_and_imports(file_content, selected_items, file_path):
+def extract_code_and_imports(file_content, selected_items, sanitized_path):
     tree = ast.parse(file_content)
     selected_code = []
     imports = set()
@@ -259,15 +268,14 @@ def extract_code_and_imports(file_content, selected_items, file_path):
             imports.add(ast.get_source_segment(file_content, node))
 
     imports_str = "\n".join(sorted(imports))
-    file_name = os.path.basename(file_path)
-    header = f"# {file_name}\n\n## Selected Classes/Functions: {', '.join(selected_items)}\n"
+    header = f"# {sanitized_path}\n\n## Selected Classes/Functions: {', '.join(selected_items)}\n"
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.name in selected_items:
             start_line = node.lineno - 1
             end_line = node.end_lineno
             code_block = "\n".join(file_content.splitlines()[start_line:end_line])
-            reference_path = f"{file_path.replace('/', '.')}.{node.name}"
+            reference_path = f"{sanitized_path.replace('/', '.')}.{node.name}"
             selected_code.append(f"### `{reference_path}`\n\n```python\n{code_block}\n```\n")
 
     if selected_code:
