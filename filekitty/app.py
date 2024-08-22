@@ -2,7 +2,7 @@ import ast
 import os
 
 from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence
+from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence, QDragEnterEvent, QDropEvent
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
     QLabel, QListWidget, QDialog, QAction, QMenuBar, QLineEdit, QHBoxLayout
@@ -117,7 +117,7 @@ class FilePicker(QWidget):
         self.setWindowTitle('FileKitty')
         self.setWindowIcon(QIcon(ICON_PATH))
         self.setGeometry(100, 100, 800, 600)
-        self.setAcceptDrops(True)
+        self.setAcceptDrops(True)  # Enable drag-and-drop
         self.selected_items = []  # Track selected items
         self.currentFiles = []  # Track current files
         self.initUI()
@@ -199,7 +199,6 @@ class FilePicker(QWidget):
                 sanitized_path = self.sanitize_path(file)
                 self.fileList.addItem(sanitized_path)
 
-            # Enable or disable the "Select Classes/Functions" button based on whether all selected files are Python files
             if all(file.endswith('.py') for file in files):
                 self.btnSelectClassesFunctions.setEnabled(True)
             else:
@@ -251,15 +250,12 @@ class FilePicker(QWidget):
             if file_path.endswith('.py'):
                 classes, functions, imports, file_content = parse_python_file(file_path)
                 if not self.selected_items:
-                    # If no specific classes/functions are selected, show the entire file content
                     combined_code += f"# {sanitized_path}\n\n```python\n{file_content}\n```\n"
                 else:
-                    # Show only the selected classes/functions
                     filtered_code = extract_code_and_imports(file_content, self.selected_items, sanitized_path)
-                    if filtered_code.strip():  # Only add if there is content to show
+                    if filtered_code.strip():
                         combined_code += filtered_code
             else:
-                # For non-Python files, simply append the entire file content
                 with open(file_path, 'r', encoding='utf-8') as file:
                     file_content = file.read()
                     combined_code += f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
@@ -274,6 +270,35 @@ class FilePicker(QWidget):
             return 'typescript'
         else:
             return 'plaintext'
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event: QDropEvent):
+        if event.mimeData().hasUrls():
+            files = []
+            for url in event.mimeData().urls():
+                if url.isLocalFile():
+                    files.append(url.toLocalFile())
+            if files:
+                self.currentFiles = files
+                self.fileList.clear()
+                for file in files:
+                    sanitized_path = self.sanitize_path(file)
+                    self.fileList.addItem(sanitized_path)
+
+                if all(file.endswith('.py') for file in files):
+                    self.btnSelectClassesFunctions.setEnabled(True)
+                else:
+                    self.btnSelectClassesFunctions.setEnabled(False)
+
+                self.updateTextEdit()
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
 
 def parse_python_file(file_path):
