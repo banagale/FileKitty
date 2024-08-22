@@ -357,7 +357,7 @@ def extract_code_and_imports(file_content, selected_items, sanitized_path):
             selected_code.append(f"### `{reference_path}`\n\n```python\n{code_block}\n```\n")
 
     if selected_code:
-        return f"{header}\n```python\n{imports_str}\n```\n\n" + "\n.join(selected_code)"
+        return f"{header}\n```python\n{imports_str}\n```\n\n" + "\n".join(selected_code)
     else:
         # If no classes/functions are selected in this file, return an empty string
         return ""
