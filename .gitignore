@@ -40,3 +40,4 @@ temp_*/
 s3_local/
 inputs/
 outputs/
+.eggs*/*
