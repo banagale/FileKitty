@@ -8,6 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 pyqt5 = "^5.15.10"
+setuptools = "==70.3.0"
 
 
 [tool.poetry.group.dev.dependencies]
