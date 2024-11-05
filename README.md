@@ -16,6 +16,7 @@ A simple file selection and concatenation tool.
 - Pasting file contents into an LLM to provide context to a prompt
 
 ## How to use it
+
 1. Open the app and click ***Open Files***.
 2. Select the files you want to concatenate:
    <img src="https://github.com/user-attachments/assets/5596d32e-52b3-4791-90eb-32ba0def3162" width="741">
@@ -23,7 +24,7 @@ A simple file selection and concatenation tool.
 4. Select, Copy to clipboard and paste into your prompt:
    <img src="https://github.com/user-attachments/assets/d5a97ee1-4981-4222-bb1f-3993bff9adcb" width="441">
 
-**OR** 
+**OR**
 
 1. In MacOS Finder, find the files you want to concatenate
 2. Open the FileKitty app
@@ -34,10 +35,11 @@ A simple file selection and concatenation tool.
 
 ### Prerequisites
 
- - Poetry is used to manage dependencies and build the app.
- - Refer to the [Poetry documentation](https://python-poetry.org/docs/) for installation instructions.
+- Poetry is used to manage dependencies and build the app.
+- Refer to the [Poetry documentation](https://python-poetry.org/docs/) for installation instructions.
 
 ### Build from source
+
 ```bash
 poetry install
 poetry run python setup.py py2app
