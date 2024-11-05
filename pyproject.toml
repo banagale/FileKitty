@@ -8,11 +8,12 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 pyqt5 = "^5.15.10"
+setuptools = "==70.3.0"
 
 
 [tool.poetry.group.dev.dependencies]
 py2app = "^0.28.7"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
