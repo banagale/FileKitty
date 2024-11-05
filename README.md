@@ -1,6 +1,7 @@
 # FileKitty
 
 <img src="https://github.com/banagale/FileKitty/assets/1409710/d7c68e71-5245-499b-8be9-3ca1f88adc1b">
+
 A simple file selection and concatenation tool.
 
 ## Features
