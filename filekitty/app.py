@@ -6,6 +6,7 @@ from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QIcon, QKe
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
+    QComboBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -64,7 +65,7 @@ class PreferencesDialog(QDialog):
         self.pathEdit.setText(path)
 
     def accept(self):
-        settings = QSettings("YourCompany", "FileKitty")
+        settings = QSettings("Bastet", "FileKitty")
         settings.setValue("defaultPath", self.get_path())
         super().accept()
 
@@ -76,13 +77,65 @@ class SelectClassesFunctionsDialog(QDialog):
         self.all_classes = all_classes
         self.all_functions = all_functions
         self.selected_items = selected_items if selected_items is not None else []
+        self.parent = parent  # To access currentFiles
         self.resize(600, 400)
         self.initUI()
 
     def initUI(self):
         layout = QVBoxLayout(self)
 
+        # Mode selection
+        mode_layout = QHBoxLayout()
+        self.mode_combo = QComboBox(self)
+        self.mode_combo.addItems(["All Files", "Single File"])
+        self.mode_combo.currentTextChanged.connect(self.update_file_selection)
+        mode_layout.addWidget(QLabel("Selection Mode:"))
+        mode_layout.addWidget(self.mode_combo)
+        layout.addLayout(mode_layout)
+
+        # File selection for Single File mode
+        self.file_combo = QComboBox(self)
+        self.file_combo.setVisible(False)
+        self.file_combo.currentTextChanged.connect(self.update_symbols)
+        mode_layout.addWidget(self.file_combo)
+
         self.fileList = QListWidget(self)
+        layout.addWidget(self.fileList)
+
+        self.btnOk = QPushButton("OK", self)
+        self.btnOk.clicked.connect(self.accept)
+        layout.addWidget(self.btnOk)
+
+        self.setLayout(layout)
+        self.update_file_selection("All Files")  # Initial population
+
+    def update_file_selection(self, mode):
+        self.file_combo.setVisible(mode == "Single File")
+        if mode == "Single File":
+            self.file_combo.clear()
+            python_files = [f for f in self.parent.currentFiles if f.endswith(".py")]
+            self.file_combo.addItems([Path(f).name for f in python_files])
+            if python_files:
+                self.update_symbols(python_files[0])
+        else:
+            self.populate_all_files()
+
+    def update_symbols(self, file_name):
+        self.fileList.clear()
+        selected_file = next((f for f in self.parent.currentFiles if Path(f).name == file_name), None)
+        if selected_file:
+            classes, functions, _, _ = parse_python_file(selected_file)
+            for cls in classes:
+                item = QListWidgetItem(f"Class: {cls}")
+                item.setCheckState(Qt.Checked if cls in self.selected_items else Qt.Unchecked)
+                self.fileList.addItem(item)
+            for func in functions:
+                item = QListWidgetItem(f"Function: {func}")
+                item.setCheckState(Qt.Checked if func in self.selected_items else Qt.Unchecked)
+                self.fileList.addItem(item)
+
+    def populate_all_files(self):
+        self.fileList.clear()
         for file_path, classes in self.all_classes.items():
             file_header = QListWidgetItem(f"File: {Path(file_path).name} (Classes)")
             file_header.setFlags(file_header.flags() & ~Qt.ItemIsSelectable)
@@ -101,14 +154,6 @@ class SelectClassesFunctionsDialog(QDialog):
                 item.setCheckState(Qt.Checked if func in self.selected_items else Qt.Unchecked)
                 self.fileList.addItem(item)
 
-        layout.addWidget(self.fileList)
-
-        self.btnOk = QPushButton("OK", self)
-        self.btnOk.clicked.connect(self.accept)
-        layout.addWidget(self.btnOk)
-
-        self.setLayout(layout)
-
     def accept(self):
         self.selected_items = [
             item.text().split(": ")[1]
@@ -120,6 +165,15 @@ class SelectClassesFunctionsDialog(QDialog):
     def get_selected_items(self):
         return self.selected_items
 
+    def get_mode(self):
+        return self.mode_combo.currentText()
+
+    def get_selected_file(self):
+        if self.mode_combo.currentText() == "Single File":
+            file_name = self.file_combo.currentText()
+            return next((f for f in self.parent.currentFiles if Path(f).name == file_name), None)
+        return None
+
 
 class FilePicker(QWidget):
     def __init__(self):
@@ -130,6 +184,8 @@ class FilePicker(QWidget):
         self.setAcceptDrops(True)
         self.selected_items = []
         self.currentFiles = []
+        self.selection_mode = "All Files"  # New state
+        self.selected_file = None  # New state
         self.initUI()
         self.createActions()
         self.createMenu()
@@ -189,7 +245,7 @@ class FilePicker(QWidget):
         return settings.value("defaultPath", QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
 
     def set_default_path(self, path):
-        settings = QSettings("YourCompany", "FileKitty")
+        settings = QSettings("Bastet", "FileKitty")
         settings.setValue("defaultPath", path)
 
     def openFiles(self):
@@ -217,7 +273,7 @@ class FilePicker(QWidget):
             self.updateTextEdit()
 
     def selectClassesFunctions(self):
-        """Allow selection of classes/functions from all selected Python files."""
+        """Allow selection of classes/functions from all or one selected Python file."""
         all_classes = {}
         all_functions = {}
         for file_path in self.currentFiles:
@@ -230,6 +286,8 @@ class FilePicker(QWidget):
             dialog = SelectClassesFunctionsDialog(all_classes, all_functions, self.selected_items, self)
             if dialog.exec_():
                 self.selected_items = dialog.get_selected_items()
+                self.selection_mode = dialog.get_mode()
+                self.selected_file = dialog.get_selected_file()
                 self.updateTextEdit()
 
     def copyToClipboard(self):
@@ -248,14 +306,17 @@ class FilePicker(QWidget):
         parts = path.parts
         if "Users" in parts:
             user_index = parts.index("Users")
-            sanitized_parts = parts[:user_index] + parts[user_index + 2 :]
+            sanitized_parts = parts[:user_index] + parts[user_index + 2:]
             return str(Path(*sanitized_parts))
         return str(path)
 
     def updateTextEdit(self):
-        """Update the main text area with the content of all selected files."""
+        """Update the main text area with the content of selected files."""
         combined_code = ""
-        for file_path in self.currentFiles:
+        files_to_process = (
+            [self.selected_file] if self.selection_mode == "Single File" and self.selected_file else self.currentFiles
+        )
+        for file_path in files_to_process:
             sanitized_path = self.sanitize_path(file_path)
             if file_path.endswith(".py"):
                 classes, functions, imports, file_content = parse_python_file(file_path)
@@ -267,7 +328,12 @@ class FilePicker(QWidget):
                         combined_code += filtered_code
             else:
                 file_content = read_file_contents(file_path)
-                combined_code += f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
+                combined_code += (
+                    f"# {sanitized_path}\n\n"
+                    f"```{self.detect_language(file_path)}\n"
+                    f"{file_content}\n"
+                    f"```\n"
+                )
 
         self.textEdit.setText(combined_code)
 
