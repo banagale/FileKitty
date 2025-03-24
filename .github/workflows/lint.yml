@@ -1,0 +1,29 @@
+name: Lint
+
+on: [ push, pull_request ]
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: poetry install --no-root
+
+      - name: Check Ruff formatting
+        run: poetry run ruff format --check .
+
+      - name: Run Ruff linter
+        run: poetry run ruff check --output-format=github .
