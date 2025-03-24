@@ -1,11 +1,23 @@
 import ast
 from pathlib import Path
 
-from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence, QDragEnterEvent, QDropEvent
+from PyQt5.QtCore import QSettings, QStandardPaths, Qt
+from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
-    QLabel, QListWidget, QDialog, QAction, QMenuBar, QLineEdit, QHBoxLayout, QListWidgetItem
+    QAction,
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenuBar,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 ICON_PATH = "assets/icon/FileKitty-icon.png"
@@ -173,8 +185,8 @@ class FilePicker(QWidget):
             self.set_default_path(new_path)
 
     def get_default_path(self):
-        settings = QSettings('YourCompany', 'FileKitty')
-        return settings.value('defaultPath', QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
+        settings = QSettings("Bastet", "FileKitty")
+        return settings.value("defaultPath", QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
 
     def set_default_path(self, path):
         settings = QSettings("YourCompany", "FileKitty")
@@ -205,6 +217,7 @@ class FilePicker(QWidget):
             self.updateTextEdit()
 
     def selectClassesFunctions(self):
+        """Allow selection of classes/functions from all selected Python files."""
         all_classes = {}
         all_functions = {}
         for file_path in self.currentFiles:
@@ -235,7 +248,7 @@ class FilePicker(QWidget):
         parts = path.parts
         if "Users" in parts:
             user_index = parts.index("Users")
-            sanitized_parts = parts[:user_index] + parts[user_index + 2:]
+            sanitized_parts = parts[:user_index] + parts[user_index + 2 :]
             return str(Path(*sanitized_parts))
         return str(path)
 
@@ -298,7 +311,7 @@ class FilePicker(QWidget):
 
 
 def read_file_contents(file_path: str) -> str:
-    with open(file_path, 'r', encoding='utf-8') as file:
+    with open(file_path, encoding="utf-8") as file:
         return file.read()
 
 
@@ -347,14 +360,13 @@ def extract_code_and_imports(file_content: str, selected_items: list[str], sanit
 
     if selected_code:
         return f"{header}\n```python\n{imports_str}\n```\n\n" + "\n".join(selected_code)
-    else:
-        # If no classes/functions are selected in this file, return an empty string
-        return ""
+    # If no classes/functions are selected in this file, return an empty string
+    return ""
 
 
 if __name__ == "__main__":
     app = QApplication([])
-    app.setOrganizationName("YourCompany")
+    app.setOrganizationName("Bastet")
     app.setApplicationName("FileKitty")
     app.setWindowIcon(QIcon(ICON_PATH))
     ex = FilePicker()
