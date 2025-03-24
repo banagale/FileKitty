@@ -1,23 +1,11 @@
 import ast
-import os
+from pathlib import Path
 
-from PyQt5.QtCore import QSettings, Qt
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QIcon, QKeySequence
+from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence, QDragEnterEvent, QDropEvent
 from PyQt5.QtWidgets import (
-    QAction,
-    QApplication,
-    QDialog,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QMenuBar,
-    QPushButton,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
+    QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
+    QLabel, QListWidget, QDialog, QAction, QMenuBar, QLineEdit, QHBoxLayout, QListWidgetItem
 )
 
 ICON_PATH = "assets/icon/FileKitty-icon.png"
@@ -76,7 +64,7 @@ class SelectClassesFunctionsDialog(QDialog):
         self.all_classes = all_classes
         self.all_functions = all_functions
         self.selected_items = selected_items if selected_items is not None else []
-        self.resize(600, 400)  # Set width to 600px and height to 400px
+        self.resize(600, 400)
         self.initUI()
 
     def initUI(self):
@@ -84,7 +72,7 @@ class SelectClassesFunctionsDialog(QDialog):
 
         self.fileList = QListWidget(self)
         for file_path, classes in self.all_classes.items():
-            file_header = QListWidgetItem(f"File: {os.path.basename(file_path)} (Classes)")
+            file_header = QListWidgetItem(f"File: {Path(file_path).name} (Classes)")
             file_header.setFlags(file_header.flags() & ~Qt.ItemIsSelectable)
             self.fileList.addItem(file_header)
             for cls in classes:
@@ -93,7 +81,7 @@ class SelectClassesFunctionsDialog(QDialog):
                 self.fileList.addItem(item)
 
         for file_path, functions in self.all_functions.items():
-            file_header = QListWidgetItem(f"File: {os.path.basename(file_path)} (Functions)")
+            file_header = QListWidgetItem(f"File: {Path(file_path).name} (Functions)")
             file_header.setFlags(file_header.flags() & ~Qt.ItemIsSelectable)
             self.fileList.addItem(file_header)
             for func in functions:
@@ -127,14 +115,12 @@ class FilePicker(QWidget):
         self.setWindowTitle("FileKitty")
         self.setWindowIcon(QIcon(ICON_PATH))
         self.setGeometry(100, 100, 800, 600)
-        self.setAcceptDrops(True)  # Enable drag-and-drop
-        self.selected_items = []  # Track selected items
-        self.currentFiles = []  # Track current files
+        self.setAcceptDrops(True)
+        self.selected_items = []
+        self.currentFiles = []
         self.initUI()
         self.createActions()
         self.createMenu()
-
-        # Load the default path on startup
         self.default_path = self.get_default_path()
 
     def initUI(self):
@@ -182,13 +168,13 @@ class FilePicker(QWidget):
     def showPreferences(self):
         dialog = PreferencesDialog(self)
         dialog.set_path(self.get_default_path())
-        if dialog.exec_():  # If the dialog is accepted
+        if dialog.exec_():
             new_path = dialog.get_path()
             self.set_default_path(new_path)
 
     def get_default_path(self):
-        settings = QSettings("YourCompany", "FileKitty")
-        return settings.value("defaultPath", "")
+        settings = QSettings('YourCompany', 'FileKitty')
+        return settings.value('defaultPath', QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation))
 
     def set_default_path(self, path):
         settings = QSettings("YourCompany", "FileKitty")
@@ -219,7 +205,6 @@ class FilePicker(QWidget):
             self.updateTextEdit()
 
     def selectClassesFunctions(self):
-        """Allow selection of classes/functions from all selected Python files."""
         all_classes = {}
         all_functions = {}
         for file_path in self.currentFiles:
@@ -246,13 +231,13 @@ class FilePicker(QWidget):
 
     def sanitize_path(self, file_path):
         """Remove sensitive directory information from file paths."""
-        parts = file_path.split(os.sep)
+        path = Path(file_path)
+        parts = path.parts
         if "Users" in parts:
             user_index = parts.index("Users")
-            # Remove the "Users" directory and the one immediately following it (likely the username)
-            sanitized_parts = parts[:user_index] + parts[user_index + 2 :]
-            return os.sep.join(sanitized_parts)
-        return file_path
+            sanitized_parts = parts[:user_index] + parts[user_index + 2:]
+            return str(Path(*sanitized_parts))
+        return str(path)
 
     def updateTextEdit(self):
         """Update the main text area with the content of all selected files."""
@@ -268,11 +253,8 @@ class FilePicker(QWidget):
                     if filtered_code.strip():
                         combined_code += filtered_code
             else:
-                with open(file_path, encoding="utf-8") as file:
-                    file_content = file.read()
-                    combined_code += (
-                        f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
-                    )
+                file_content = read_file_contents(file_path)
+                combined_code += f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
 
         self.textEdit.setText(combined_code)
 
@@ -315,11 +297,15 @@ class FilePicker(QWidget):
             event.ignore()
 
 
-def parse_python_file(file_path):
+def read_file_contents(file_path: str) -> str:
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return file.read()
+
+
+def parse_python_file(file_path: str) -> tuple[list[str], list[str], list[str], str]:
     try:
-        with open(file_path, encoding="utf-8") as file:
-            file_content = file.read()
-            tree = ast.parse(file_content, filename=file_path)
+        file_content = read_file_contents(file_path)
+        tree = ast.parse(file_content, filename=file_path)
     except SyntaxError as e:
         print(f"Syntax error in file {file_path}: {e}")
         return [], [], [], ""
@@ -339,18 +325,7 @@ def parse_python_file(file_path):
     return classes, functions, imports, file_content
 
 
-def sanitize_path(file_path):
-    """Remove sensitive directory information from file paths."""
-    parts = file_path.split(os.sep)
-    if "Users" in parts:
-        user_index = parts.index("Users")
-        # Remove the "Users" directory and the one immediately following it (likely the username)
-        sanitized_parts = parts[:user_index] + parts[user_index + 2 :]
-        return os.sep.join(sanitized_parts)
-    return file_path
-
-
-def extract_code_and_imports(file_content, selected_items, sanitized_path):
+def extract_code_and_imports(file_content: str, selected_items: list[str], sanitized_path: str) -> str:
     tree = ast.parse(file_content)
     selected_code = []
     imports = set()
