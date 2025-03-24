@@ -20,13 +20,13 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-ICON_PATH = 'assets/icon/FileKitty-icon.png'
+ICON_PATH = "assets/icon/FileKitty-icon.png"
 
 
 class PreferencesDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Preferences')
+        self.setWindowTitle("Preferences")
         self.initUI()
 
     def initUI(self):
@@ -41,8 +41,8 @@ class PreferencesDialog(QDialog):
         layout.addWidget(btnBrowse)
 
         btnLayout = QHBoxLayout()
-        btnSave = QPushButton('Save')
-        btnCancel = QPushButton('Cancel')
+        btnSave = QPushButton("Save")
+        btnCancel = QPushButton("Cancel")
         btnLayout.addWidget(btnSave)
         btnLayout.addWidget(btnCancel)
 
@@ -64,15 +64,15 @@ class PreferencesDialog(QDialog):
         self.pathEdit.setText(path)
 
     def accept(self):
-        settings = QSettings('YourCompany', 'FileKitty')
-        settings.setValue('defaultPath', self.get_path())
+        settings = QSettings("YourCompany", "FileKitty")
+        settings.setValue("defaultPath", self.get_path())
         super().accept()
 
 
 class SelectClassesFunctionsDialog(QDialog):
     def __init__(self, all_classes, all_functions, selected_items=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Select Classes/Functions')
+        self.setWindowTitle("Select Classes/Functions")
         self.all_classes = all_classes
         self.all_functions = all_functions
         self.selected_items = selected_items if selected_items is not None else []
@@ -103,7 +103,7 @@ class SelectClassesFunctionsDialog(QDialog):
 
         layout.addWidget(self.fileList)
 
-        self.btnOk = QPushButton('OK', self)
+        self.btnOk = QPushButton("OK", self)
         self.btnOk.clicked.connect(self.accept)
         layout.addWidget(self.btnOk)
 
@@ -111,7 +111,8 @@ class SelectClassesFunctionsDialog(QDialog):
 
     def accept(self):
         self.selected_items = [
-            item.text().split(": ")[1] for item in self.fileList.findItems("*", Qt.MatchWildcard)
+            item.text().split(": ")[1]
+            for item in self.fileList.findItems("*", Qt.MatchWildcard)
             if item.checkState() == Qt.Checked
         ]
         super().accept()
@@ -123,7 +124,7 @@ class SelectClassesFunctionsDialog(QDialog):
 class FilePicker(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('FileKitty')
+        self.setWindowTitle("FileKitty")
         self.setWindowIcon(QIcon(ICON_PATH))
         self.setGeometry(100, 100, 800, 600)
         self.setAcceptDrops(True)  # Enable drag-and-drop
@@ -146,19 +147,19 @@ class FilePicker(QWidget):
         self.textEdit.setReadOnly(True)
         layout.addWidget(self.textEdit)
 
-        self.lineCountLabel = QLabel('Lines ready to copy: 0', self)
+        self.lineCountLabel = QLabel("Lines ready to copy: 0", self)
         layout.addWidget(self.lineCountLabel)
 
-        btnOpen = QPushButton('📂 Select Files', self)
+        btnOpen = QPushButton("📂 Select Files", self)
         btnOpen.clicked.connect(self.openFiles)
         layout.addWidget(btnOpen)
 
-        self.btnSelectClassesFunctions = QPushButton('🔍 Select Classes/Functions', self)
+        self.btnSelectClassesFunctions = QPushButton("🔍 Select Classes/Functions", self)
         self.btnSelectClassesFunctions.clicked.connect(self.selectClassesFunctions)
         self.btnSelectClassesFunctions.setEnabled(False)
         layout.addWidget(self.btnSelectClassesFunctions)
 
-        self.btnCopy = QPushButton('📋 Copy to Clipboard', self)
+        self.btnCopy = QPushButton("📋 Copy to Clipboard", self)
         self.btnCopy.clicked.connect(self.copyToClipboard)
         self.btnCopy.setEnabled(False)
         layout.addWidget(self.btnCopy)
@@ -174,7 +175,7 @@ class FilePicker(QWidget):
 
     def createMenu(self):
         menubar = QMenuBar(self)
-        appMenu = menubar.addMenu('FileKitty')
+        appMenu = menubar.addMenu("FileKitty")
         appMenu.addAction(self.prefAction)
         self.layout().setMenuBar(menubar)
 
@@ -186,20 +187,22 @@ class FilePicker(QWidget):
             self.set_default_path(new_path)
 
     def get_default_path(self):
-        settings = QSettings('YourCompany', 'FileKitty')
-        return settings.value('defaultPath', '')
+        settings = QSettings("YourCompany", "FileKitty")
+        return settings.value("defaultPath", "")
 
     def set_default_path(self, path):
-        settings = QSettings('YourCompany', 'FileKitty')
-        settings.setValue('defaultPath', path)
+        settings = QSettings("YourCompany", "FileKitty")
+        settings.setValue("defaultPath", path)
 
     def openFiles(self):
         default_path = self.get_default_path() or ""
         options = QFileDialog.Options()
         files, _ = QFileDialog.getOpenFileNames(
-            self, "Select files to analyze", default_path,
+            self,
+            "Select files to analyze",
+            default_path,
             "All Files (*);;Python Files (*.py);;JavaScript Files (*.js);;TypeScript Files (*.ts *.tsx)",
-            options=options
+            options=options,
         )
         if files:
             self.currentFiles = files
@@ -208,7 +211,7 @@ class FilePicker(QWidget):
                 sanitized_path = self.sanitize_path(file)
                 self.fileList.addItem(sanitized_path)
 
-            if all(file.endswith('.py') for file in files):
+            if all(file.endswith(".py") for file in files):
                 self.btnSelectClassesFunctions.setEnabled(True)
             else:
                 self.btnSelectClassesFunctions.setEnabled(False)
@@ -220,7 +223,7 @@ class FilePicker(QWidget):
         all_classes = {}
         all_functions = {}
         for file_path in self.currentFiles:
-            if file_path.endswith('.py'):
+            if file_path.endswith(".py"):
                 classes, functions, _, _ = parse_python_file(file_path)
                 all_classes[file_path] = classes
                 all_functions[file_path] = functions
@@ -237,8 +240,8 @@ class FilePicker(QWidget):
 
     def updateCopyButtonState(self):
         text = self.textEdit.toPlainText()
-        line_count = text.count('\n') + 1 if text else 0
-        self.lineCountLabel.setText(f'Lines ready to copy: {line_count}')
+        line_count = text.count("\n") + 1 if text else 0
+        self.lineCountLabel.setText(f"Lines ready to copy: {line_count}")
         self.btnCopy.setEnabled(bool(text))
 
     def sanitize_path(self, file_path):
@@ -247,7 +250,7 @@ class FilePicker(QWidget):
         if "Users" in parts:
             user_index = parts.index("Users")
             # Remove the "Users" directory and the one immediately following it (likely the username)
-            sanitized_parts = parts[:user_index] + parts[user_index + 2:]
+            sanitized_parts = parts[:user_index] + parts[user_index + 2 :]
             return os.sep.join(sanitized_parts)
         return file_path
 
@@ -256,7 +259,7 @@ class FilePicker(QWidget):
         combined_code = ""
         for file_path in self.currentFiles:
             sanitized_path = self.sanitize_path(file_path)
-            if file_path.endswith('.py'):
+            if file_path.endswith(".py"):
                 classes, functions, imports, file_content = parse_python_file(file_path)
                 if not self.selected_items:
                     combined_code += f"# {sanitized_path}\n\n```python\n{file_content}\n```\n"
@@ -267,21 +270,20 @@ class FilePicker(QWidget):
             else:
                 with open(file_path, encoding="utf-8") as file:
                     file_content = file.read()
-                    combined_code += (f"# {sanitized_path}\n\n"
-                                      f"```"
-                                      f"{self.detect_language(file_path)}\n{file_content}\n"
-                                      f"```\n")
+                    combined_code += (
+                        f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
+                    )
 
         self.textEdit.setText(combined_code)
 
     def detect_language(self, file_path):
         """Detect the language based on the file extension for syntax highlighting in markdown."""
-        if file_path.endswith('.js'):
-            return 'javascript'
-        elif file_path.endswith(('.ts', '.tsx')):
-            return 'typescript'
+        if file_path.endswith(".js"):
+            return "javascript"
+        elif file_path.endswith((".ts", ".tsx")):
+            return "typescript"
         else:
-            return 'plaintext'
+            return "plaintext"
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -302,7 +304,7 @@ class FilePicker(QWidget):
                     sanitized_path = self.sanitize_path(file)
                     self.fileList.addItem(sanitized_path)
 
-                if all(file.endswith('.py') for file in files):
+                if all(file.endswith(".py") for file in files):
                     self.btnSelectClassesFunctions.setEnabled(True)
                 else:
                     self.btnSelectClassesFunctions.setEnabled(False)
@@ -343,7 +345,7 @@ def sanitize_path(file_path):
     if "Users" in parts:
         user_index = parts.index("Users")
         # Remove the "Users" directory and the one immediately following it (likely the username)
-        sanitized_parts = parts[:user_index] + parts[user_index + 2:]
+        sanitized_parts = parts[:user_index] + parts[user_index + 2 :]
         return os.sep.join(sanitized_parts)
     return file_path
 
@@ -375,10 +377,10 @@ def extract_code_and_imports(file_content, selected_items, sanitized_path):
         return ""
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = QApplication([])
-    app.setOrganizationName('YourCompany')
-    app.setApplicationName('FileKitty')
+    app.setOrganizationName("YourCompany")
+    app.setApplicationName("FileKitty")
     app.setWindowIcon(QIcon(ICON_PATH))
     ex = FilePicker()
     ex.show()
