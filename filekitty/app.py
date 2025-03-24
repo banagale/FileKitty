@@ -1,14 +1,23 @@
 import ast
 import os
 
-from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QIcon, QGuiApplication, QKeySequence, QDragEnterEvent, QDropEvent
+from PyQt5.QtCore import QSettings, Qt
+from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QGuiApplication, QIcon, QKeySequence
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QFileDialog, QVBoxLayout, QPushButton, QTextEdit,
-    QLabel, QListWidget, QDialog, QAction, QMenuBar, QLineEdit, QHBoxLayout
-)
-from PyQt5.QtWidgets import (
-    QListWidgetItem
+    QAction,
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenuBar,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 ICON_PATH = 'assets/icon/FileKitty-icon.png'
@@ -16,7 +25,7 @@ ICON_PATH = 'assets/icon/FileKitty-icon.png'
 
 class PreferencesDialog(QDialog):
     def __init__(self, parent=None):
-        super(PreferencesDialog, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle('Preferences')
         self.initUI()
 
@@ -62,7 +71,7 @@ class PreferencesDialog(QDialog):
 
 class SelectClassesFunctionsDialog(QDialog):
     def __init__(self, all_classes, all_functions, selected_items=None, parent=None):
-        super(SelectClassesFunctionsDialog, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle('Select Classes/Functions')
         self.all_classes = all_classes
         self.all_functions = all_functions
@@ -256,9 +265,12 @@ class FilePicker(QWidget):
                     if filtered_code.strip():
                         combined_code += filtered_code
             else:
-                with open(file_path, 'r', encoding='utf-8') as file:
+                with open(file_path, encoding="utf-8") as file:
                     file_content = file.read()
-                    combined_code += f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
+                    combined_code += (f"# {sanitized_path}\n\n"
+                                      f"```"
+                                      f"{self.detect_language(file_path)}\n{file_content}\n"
+                                      f"```\n")
 
         self.textEdit.setText(combined_code)
 
@@ -303,7 +315,7 @@ class FilePicker(QWidget):
 
 def parse_python_file(file_path):
     try:
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with open(file_path, encoding="utf-8") as file:
             file_content = file.read()
             tree = ast.parse(file_content, filename=file_path)
     except SyntaxError as e:
@@ -319,7 +331,7 @@ def parse_python_file(file_path):
             classes.append(node.name)
         elif isinstance(node, ast.FunctionDef):
             functions.append(node.name)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        elif isinstance(node, ast.Import | ast.ImportFrom):
             imports.append(ast.get_source_segment(file_content, node))
 
     return classes, functions, imports, file_content
@@ -342,14 +354,14 @@ def extract_code_and_imports(file_content, selected_items, sanitized_path):
     imports = set()
 
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import | ast.ImportFrom):
             imports.add(ast.get_source_segment(file_content, node))
 
     imports_str = "\n".join(sorted(imports))
     header = f"# {sanitized_path}\n\n## Selected Classes/Functions: {', '.join(selected_items)}\n"
 
     for node in ast.walk(tree):
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.name in selected_items:
+        if isinstance(node, ast.ClassDef | ast.FunctionDef) and node.name in selected_items:
             start_line = node.lineno - 1
             end_line = node.end_lineno
             code_block = "\n".join(file_content.splitlines()[start_line:end_line])
