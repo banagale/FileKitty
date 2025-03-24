@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -111,12 +112,15 @@ class SelectClassesFunctionsDialog(QDialog):
 
     def update_file_selection(self, mode):
         self.file_combo.setVisible(mode == "Single File")
+        self.file_combo.clear()
         if mode == "Single File":
-            self.file_combo.clear()
             python_files = [f for f in self.parent.currentFiles if f.endswith(".py")]
-            self.file_combo.addItems([Path(f).name for f in python_files])
-            if python_files:
-                self.update_symbols(python_files[0])
+            if not python_files:
+                self.fileList.clear()
+                self.fileList.addItem("No Python files available")
+            else:
+                self.file_combo.addItems([Path(f).name for f in python_files])
+                self.update_symbols(Path(python_files[0]).name)
         else:
             self.populate_all_files()
 
@@ -125,14 +129,19 @@ class SelectClassesFunctionsDialog(QDialog):
         selected_file = next((f for f in self.parent.currentFiles if Path(f).name == file_name), None)
         if selected_file:
             classes, functions, _, _ = parse_python_file(selected_file)
-            for cls in classes:
-                item = QListWidgetItem(f"Class: {cls}")
-                item.setCheckState(Qt.Checked if cls in self.selected_items else Qt.Unchecked)
-                self.fileList.addItem(item)
-            for func in functions:
-                item = QListWidgetItem(f"Function: {func}")
-                item.setCheckState(Qt.Checked if func in self.selected_items else Qt.Unchecked)
-                self.fileList.addItem(item)
+            if not (classes or functions):
+                self.fileList.addItem("No classes or functions found in this file")
+            else:
+                for cls in classes:
+                    item = QListWidgetItem(f"Class: {cls}")
+                    item.setCheckState(Qt.Checked if cls in self.selected_items else Qt.Unchecked)
+                    self.fileList.addItem(item)
+                for func in functions:
+                    item = QListWidgetItem(f"Function: {func}")
+                    item.setCheckState(Qt.Checked if func in self.selected_items else Qt.Unchecked)
+                    self.fileList.addItem(item)
+        else:
+            self.fileList.addItem("File not found")
 
     def populate_all_files(self):
         self.fileList.clear()
@@ -218,6 +227,11 @@ class FilePicker(QWidget):
         self.btnCopy.setEnabled(False)
         layout.addWidget(self.btnCopy)
 
+        self.btnRefresh = QPushButton("🔄 Refresh", self)
+        self.btnRefresh.clicked.connect(self.refreshText)
+        self.btnRefresh.setEnabled(False)
+        layout.addWidget(self.btnRefresh)
+
         self.textEdit.textChanged.connect(self.updateCopyButtonState)
 
         self.setLayout(layout)
@@ -269,6 +283,7 @@ class FilePicker(QWidget):
                 self.btnSelectClassesFunctions.setEnabled(True)
             else:
                 self.btnSelectClassesFunctions.setEnabled(False)
+            self.btnRefresh.setEnabled(True)
 
             self.updateTextEdit()
 
@@ -299,6 +314,14 @@ class FilePicker(QWidget):
         line_count = text.count("\n") + 1 if text else 0
         self.lineCountLabel.setText(f"Lines ready to copy: {line_count}")
         self.btnCopy.setEnabled(bool(text))
+        self.btnRefresh.setEnabled(bool(text))
+
+    def refreshText(self):
+        """Refresh the text output with the latest file contents."""
+        try:
+            self.updateTextEdit()
+        except Exception as e:
+            QMessageBox.warning(self, "Refresh Error", f"Failed to refresh some files: {str(e)}")
 
     def sanitize_path(self, file_path):
         """Remove sensitive directory information from file paths."""
@@ -306,7 +329,7 @@ class FilePicker(QWidget):
         parts = path.parts
         if "Users" in parts:
             user_index = parts.index("Users")
-            sanitized_parts = parts[:user_index] + parts[user_index + 2:]
+            sanitized_parts = parts[:user_index] + parts[user_index + 2 :]
             return str(Path(*sanitized_parts))
         return str(path)
 
@@ -328,12 +351,7 @@ class FilePicker(QWidget):
                         combined_code += filtered_code
             else:
                 file_content = read_file_contents(file_path)
-                combined_code += (
-                    f"# {sanitized_path}\n\n"
-                    f"```{self.detect_language(file_path)}\n"
-                    f"{file_content}\n"
-                    f"```\n"
-                )
+                combined_code += f"# {sanitized_path}\n\n```{self.detect_language(file_path)}\n{file_content}\n```\n"
 
         self.textEdit.setText(combined_code)
 
@@ -369,6 +387,7 @@ class FilePicker(QWidget):
                     self.btnSelectClassesFunctions.setEnabled(True)
                 else:
                     self.btnSelectClassesFunctions.setEnabled(False)
+                self.btnRefresh.setEnabled(True)
 
                 self.updateTextEdit()
             event.acceptProposedAction()
