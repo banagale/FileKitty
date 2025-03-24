@@ -83,5 +83,5 @@ pre-commit run --all-files  # Optional: check everything right away
 
 ## Continuous Integration
 
-Linting is enforced via GitHub Actions on every push and pull request.  
-The workflow is defined in `.github/workflows/lint.yml`.
+- **Linting**: Enforced via GitHub Actions on every push and pull request. See `.github/workflows/lint.yml`.
+- **Build Validation**: Ensures the app builds correctly on macOS. See `.github/workflows/build.yml`.
