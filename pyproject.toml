@@ -2,7 +2,8 @@
 name = "filekitty"
 version = "0.1.0"
 description = ""
-authors = ["banagale <robert@weave.bio>"]
+authors = ["Rob Banagale <rob@banagale.com>"]
+license = "MIT"
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -13,7 +14,28 @@ setuptools = "==70.3.0"
 
 [tool.poetry.group.dev.dependencies]
 py2app = "^0.28.7"
+ruff = "^0.9.6"
+pre-commit = "^4.1.0"
 
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [".venv", ".git", "__pycache__", ".mypy_cache", ".pytest_cache", "node_modules", "build", "dist"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = []
+fixable = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+testpaths = ["tests"]

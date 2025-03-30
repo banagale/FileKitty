@@ -1,0 +1,35 @@
+name: Build
+
+on: [ push, pull_request ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Build with py2app
+        run: poetry run python setup.py py2app
+
+      - name: Verify build output
+        run: |
+          if [ -d "./dist/FileKitty.app" ]; then
+            echo "Build successful: FileKitty.app found in ./dist"
+          else
+            echo "Build failed: FileKitty.app not found in ./dist"
+            exit 1
+          fi

@@ -19,10 +19,10 @@ A simple file selection and concatenation tool.
 ## How to use it
 
 1. Open the app and click ***Open Files***.
-2. Select the files you want to concatenate:
+2. Select the files you want to concatenate:  
    <img src="https://github.com/user-attachments/assets/5596d32e-52b3-4791-90eb-32ba0def3162" width="741">
-3. Click ***Open** and files will be added to the text area.
-4. Select, Copy to clipboard and paste into your prompt:
+3. Click ***Open*** and files will be added to the text area.
+4. Select, copy to clipboard, and paste into your prompt:  
    <img src="https://github.com/user-attachments/assets/d5a97ee1-4981-4222-bb1f-3993bff9adcb" width="441">
 
 **OR**
@@ -30,7 +30,7 @@ A simple file selection and concatenation tool.
 1. In MacOS Finder, find the files you want to concatenate
 2. Open the FileKitty app
 3. Drag and drop the files into the app
-4. Select, Copy to clipboard and paste into your prompt
+4. Select, copy to clipboard, and paste into your prompt
 
 ## Build
 
@@ -44,7 +44,44 @@ A simple file selection and concatenation tool.
 ```bash
 poetry install
 poetry run python setup.py py2app
-``` 
+```
 
-- App should show up in ./dist/FileKitty.app
-- Copy to Applications folder
+- App should show up in `./dist/FileKitty.app`
+- Copy to `Applications` folder
+
+## Linting and Formatting
+
+This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and code formatting.
+
+### Run locally
+
+```bash
+make lint       # Check for lint issues
+make format     # Format code
+```
+
+Or using poetry directly:
+
+```bash
+poetry run ruff check .
+poetry run ruff format .
+```
+
+## Contributing
+
+### Pre-commit hooks
+
+This project uses [pre-commit](https://pre-commit.com/) to enforce linting before each commit.
+
+To set it up locally:
+
+```bash
+poetry install  # If not already done
+pre-commit install
+pre-commit run --all-files  # Optional: check everything right away
+```
+
+## Continuous Integration
+
+- **Linting**: Enforced via GitHub Actions on every push and pull request. See `.github/workflows/lint.yml`.
+- **Build Validation**: Ensures the app builds correctly on macOS. See `.github/workflows/build.yml`.
