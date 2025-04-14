@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "filekitty"
-version = "0.1.0"
-description = ""
+version = "0.2.0"
+description = "Select and concatenate file contents, useful for providing context to LLMs and generative AI."
 authors = ["Rob Banagale <rob@banagale.com>"]
 license = "MIT"
 readme = "README.md"
@@ -9,7 +9,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 pyqt5 = "^5.15.10"
-setuptools = "==70.3.0"
+setuptools = "==70.3.0" # Keep specific version if needed for py2app compatibility
 
 
 [tool.poetry.group.dev.dependencies]
@@ -32,6 +32,7 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.ruff.lint]
+# Keeping existing lint rules
 select = ["E", "F", "W", "I", "B", "UP"]
 ignore = []
 fixable = ["E", "F", "I"]
