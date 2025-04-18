@@ -1,9 +1,8 @@
-# FileKitty
+# FileKitty [![Homebrew](https://img.shields.io/badge/brew-install-green)](https://github.com/banagale/homebrew-filekitty)
 
 <img src="https://github.com/banagale/FileKitty/assets/1409710/d7c68e71-5245-499b-8be9-3ca1f88adc1b" width="200">
 
-A macOS utility for selecting, combining, and copying the contents of files — ideal for use with **LLMs and generative AI tools**. FileKitty lets you
-grab context from multiple files with one click and keeps a full history of your selections.
+A macOS utility for selecting, combining, and copying the contents of files — ideal for use with **LLMs and generative AI tools**. FileKitty lets you grab context from multiple files with one click and keeps a full history of your selections.
 
 ---
 
@@ -22,13 +21,45 @@ grab context from multiple files with one click and keeps a full history of your
 brew install banagale/filekitty/filekitty
 ```
 
-Launch from **Applications** or from terminal with simply: `filekitty`
+### Launch the App
 
-## Install via build 
-See Manual Build section below.
+- From Terminal:  
+  ```bash
+  filekitty
+  ```
+- Or via Finder:  
+  ```bash
+  open /opt/homebrew/opt/filekitty/FileKitty.app
+  ```
+
+### Make it a Regular Mac App
+
+To access via Spotlight or Launchpad, copy the app to `/Applications`:
+
+```bash
+ditto /opt/homebrew/opt/filekitty/FileKitty.app /Applications/FileKitty.app
+```
+
+**Note:** Using `ditto` rather than `cp` preserves the application bundle's icon and metadata.
 
 ---
 
+## Manual Build (Alternative)
+
+Install [Poetry](https://python-poetry.org/) and build locally:
+
+```bash
+git clone https://github.com/banagale/FileKitty.git
+cd FileKitty
+poetry install
+poetry run python setup.py py2app
+```
+
+The app will be created in `./dist/`. Copy it to `/Applications` for full integration.
+
+Manual builds are useful for development or Linux/Windows adaptation.
+
+---
 
 ## Screenshots
 
@@ -68,11 +99,11 @@ Access via **FileKitty → Preferences** (`Cmd+,`):
 
 ---
 
-##️ Developer & Contributor Guide
+## Developer & Contributor Guide
 
-### Manual Build 
+### Manual Build
 
-Install [Poetry](https://python-poetry.org/):
+(Also listed above.)
 
 ```bash
 git clone https://github.com/banagale/FileKitty.git
@@ -81,9 +112,7 @@ poetry install
 poetry run python setup.py py2app
 ```
 
-The app bundle will be created in `./dist/`. Copy it to `/Applications` to use it like a regular app.
-
-> Manual builds may assist in testing or adapting for Linux/Windows.
+The app bundle will be created in `./dist/`.
 
 ---
 
