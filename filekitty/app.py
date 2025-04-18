@@ -788,9 +788,9 @@ class FilePicker(QWidget):
 
             # Check if the selection state actually changed
             state_changed = (
-                    set(new_selected_items) != old_selected_items
-                    or new_mode != old_mode
-                    or new_file != old_file  # Comparing paths directly
+                set(new_selected_items) != old_selected_items
+                or new_mode != old_mode
+                or new_file != old_file  # Comparing paths directly
             )
 
             if state_changed:
@@ -843,7 +843,7 @@ class FilePicker(QWidget):
             if str_path.startswith(str_home):
                 # Ensure a path separator follows the home dir part before replacing
                 if len(str_path) > len(str_home) and str_path[len(str_home)] in (os.sep, os.altsep):
-                    return "~" + str_path[len(str_home):]
+                    return "~" + str_path[len(str_home) :]
                 elif len(str_path) == len(str_home):  # Exact match to home dir
                     return "~"
             # If not relative to home, return the absolute path
@@ -903,12 +903,8 @@ class FilePicker(QWidget):
                     # Does this file contain any of the globally selected items?
                     relevant_items_exist_in_file = any(item in items_in_this_file for item in self.selected_items)
 
-                    should_filter_this_file = (
-                            is_filtered
-                            and (
-                                    self.selection_mode == "Single File"
-                                    or relevant_items_exist_in_file
-                            )
+                    should_filter_this_file = is_filtered and (
+                        self.selection_mode == "Single File" or relevant_items_exist_in_file
                     )
 
                     if should_filter_this_file:
@@ -1113,7 +1109,7 @@ class FilePicker(QWidget):
             # Manage history list: remove future states if branching
             if self.history_index < len(self.history) - 1:
                 # Remove states after the current one
-                states_to_remove = self.history[self.history_index + 1:]
+                states_to_remove = self.history[self.history_index + 1 :]
                 self.history = self.history[: self.history_index + 1]
                 # Delete the corresponding JSON files
                 for old_state in states_to_remove:
@@ -1496,13 +1492,13 @@ class CodeExtractor(ast.NodeVisitor):
             else:
                 # Multi-line segment
                 first_line = self.file_content_lines[start_line][start_col:]
-                middle_lines = self.file_content_lines[start_line + 1: end_line]
+                middle_lines = self.file_content_lines[start_line + 1 : end_line]
                 last_line = self.file_content_lines[end_line][:end_col]
                 # Ensure consistent newline endings
                 code_lines = (
-                        [first_line.rstrip("\r\n")]
-                        + [line.rstrip("\r\n") for line in middle_lines]
-                        + [last_line.rstrip("\r\n")]
+                    [first_line.rstrip("\r\n")]
+                    + [line.rstrip("\r\n") for line in middle_lines]
+                    + [last_line.rstrip("\r\n")]
                 )
                 return "\n".join(code_lines)
         except IndexError:
