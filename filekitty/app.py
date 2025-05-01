@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Keep existing PyQt5 imports and add new ones
-from PyQt5.QtCore import QMimeData, QSettings, QSize, QStandardPaths, Qt, QTimer, QUrl
+from PyQt5.QtCore import QEvent, QMimeData, QSettings, QSize, QStandardPaths, Qt, QTimer, QUrl
 from PyQt5.QtGui import (
     QColor,
     QDrag,
@@ -23,6 +23,7 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -51,6 +52,18 @@ HASH_MISSING_SENTINEL = "FILE_MISSING"
 SETTINGS_DEFAULT_PATH_KEY = "defaultPath"
 SETTINGS_HISTORY_PATH_KEY = "historyPath"
 TEXT_CHECK_CHUNK_SIZE = 1024  # Bytes to read for text file check
+
+
+class FileKittyApp(QApplication):
+    def event(self, e):
+        if e.type() == QEvent.FileOpen:
+            file = e.file()
+            print(f"Received file open event: {file}")
+            # If your main window is available, you can forward it:
+            if self.main_window:
+                self.main_window.handle_external_file(file)
+            return True  # Event handled
+        return super().event(e)
 
 
 # --- Helper Function ---
@@ -182,6 +195,12 @@ class PreferencesDialog(QDialog):
         historyPathLayout.addWidget(btnBrowseHistory)
         formLayout.addRow(QLabel("History Storage Directory:"), historyPathLayout)
 
+        # --- Auto-copy preference ---
+        self.autoCopyCheck = QCheckBox("Copy output to clipboard automatically", self)
+        settings = QSettings("Bastet", "FileKitty")
+        self.autoCopyCheck.setChecked(settings.value("autoCopyOnImport", "true") == "true")
+        formLayout.addRow(self.autoCopyCheck)
+
         mainLayout.addLayout(formLayout)
 
         buttonLayout = QHBoxLayout()
@@ -228,6 +247,7 @@ class PreferencesDialog(QDialog):
         settings = QSettings("Bastet", "FileKitty")
         settings.setValue(SETTINGS_DEFAULT_PATH_KEY, self.get_default_path())
         settings.setValue(SETTINGS_HISTORY_PATH_KEY, history_path)
+        settings.setValue("autoCopyOnImport", "true" if self.autoCopyCheck.isChecked() else "false")
         super().accept()
 
 
@@ -419,7 +439,7 @@ class SelectClassesFunctionsDialog(QDialog):
 
 # --- Main Application Window ---
 class FilePicker(QWidget):
-    def __init__(self):
+    def __init__(self, initial_files: list[str] | None = None):
         super().__init__()
         self.setWindowTitle("FileKitty")
         self.setWindowIcon(QIcon(ICON_PATH))
@@ -437,6 +457,11 @@ class FilePicker(QWidget):
         self._dragged_out_temp_files: list[str] = []  # Track temp files for cleanup
 
         self._determine_and_setup_history_dir()  # Setup history location
+        self._determine_and_setup_history_dir()
+
+        # --- load auto-copy preference ---
+        settings = QSettings("Bastet", "FileKitty")
+        self.auto_copy = settings.value("autoCopyOnImport", "true") == "true"
 
         self.staleCheckTimer = QTimer(self)
         self.staleCheckTimer.timeout.connect(self._poll_stale_status)
@@ -452,6 +477,10 @@ class FilePicker(QWidget):
         # Register cleanup functions for application exit
         atexit.register(self._cleanup_history_files)
         atexit.register(self._cleanup_drag_out_files)
+
+        # --- open any files passed in on launch (Dock / Cmd-Tab) ---
+        if initial_files:
+            self._update_files_and_maybe_create_state(sorted(initial_files))
 
     def _determine_and_setup_history_dir(self) -> None:
         """Reads settings and sets up the history directory path."""
@@ -491,6 +520,11 @@ class FilePicker(QWidget):
 
     def _setup_history_dir(self):
         pass  # Replaced by _determine_and_setup_history_dir
+
+    def handle_external_file(self, file_path: str):
+        """Handles files opened via Dock or Finder."""
+        # You could add logic to append to the current file list or replace:
+        self._update_files_and_maybe_create_state([file_path])
 
     def initUI(self):
         self.mainLayout = QVBoxLayout(self)
@@ -714,6 +748,10 @@ class FilePicker(QWidget):
         self._update_ui_for_new_files()  # Update the QListWidget
         self.updateTextEdit()  # Update the QTextEdit content
         self._create_new_state()  # Save this new state to history
+
+        # auto-copy combined output if the setting is enabled
+        if getattr(self, "auto_copy", False):
+            self.copyToClipboard()
 
     def _update_ui_for_new_files(self):
         """Populates the file list widget based on self.currentFiles."""
@@ -1570,7 +1608,7 @@ def main():
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
-    app = QApplication(sys.argv)
+    app = FileKittyApp(sys.argv)
     # Set Organization and Application Name for QSettings
     app.setOrganizationName("Bastet")
     app.setApplicationName("FileKitty")
@@ -1578,7 +1616,11 @@ def main():
     # Apply a style if desired (optional)
     # app.setStyle("Fusion")
 
-    picker = FilePicker()
+    # 🛠️ Filter out argv that are NOT files (basic safety)
+    file_args = [arg for arg in sys.argv[1:] if Path(arg).is_file()]
+
+    picker = FilePicker(initial_files=file_args)
+    app.main_window = picker
     picker.show()
     sys.exit(app.exec_())
 
