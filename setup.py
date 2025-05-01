@@ -1,4 +1,8 @@
+from PyQt5.QtCore import QLibraryInfo
 from setuptools import setup
+
+# Dynamically find the Qt plugin directory
+qt_plugins_dir = QLibraryInfo.location(QLibraryInfo.PluginsPath)
 
 APP = ["filekitty/app.py"]
 DATA_FILES = []
@@ -14,21 +18,17 @@ OPTIONS = {
         "CFBundleVersion": "0.2.0",
         "CFBundlePackageType": "APPL",
         "NSHighResolutionCapable": True,
-        "CFBundleIconFile": "FileKitty-icon.icns",
         "CFBundleDocumentTypes": [
             {
                 "CFBundleTypeName": "All Files",
                 "CFBundleTypeRole": "Editor",
                 "LSHandlerRank": "Alternate",
                 "LSItemContentTypes": ["public.data"],
-                "CFBundleTypeIconFile": "FileKitty-icon.icns",
             }
         ],
     },
     "includes": ["sip", "PyQt5", "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets"],
-    "resources": [
-        "/Users/rob/Library/Caches/pypoetry/virtualenvs/filekitty-YKgFKg7N-py3.12/lib/python3.12/site-packages/PyQt5/Qt5/plugins"
-    ],
+    "resources": [qt_plugins_dir],
     "excludes": ["test", "tests", "unittest", "tkinter", "doctest"],
 }
 
