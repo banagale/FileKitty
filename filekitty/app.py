@@ -195,12 +195,6 @@ class PreferencesDialog(QDialog):
         historyPathLayout.addWidget(btnBrowseHistory)
         formLayout.addRow(QLabel("History Storage Directory:"), historyPathLayout)
 
-        # --- Auto-copy preference ---
-        self.autoCopyCheck = QCheckBox("Copy output to clipboard automatically", self)
-        settings = QSettings("Bastet", "FileKitty")
-        self.autoCopyCheck.setChecked(settings.value("autoCopyOnImport", "true") == "true")
-        formLayout.addRow(self.autoCopyCheck)
-
         mainLayout.addLayout(formLayout)
 
         buttonLayout = QHBoxLayout()
@@ -247,7 +241,6 @@ class PreferencesDialog(QDialog):
         settings = QSettings("Bastet", "FileKitty")
         settings.setValue(SETTINGS_DEFAULT_PATH_KEY, self.get_default_path())
         settings.setValue(SETTINGS_HISTORY_PATH_KEY, history_path)
-        settings.setValue("autoCopyOnImport", "true" if self.autoCopyCheck.isChecked() else "false")
         super().accept()
 
 
@@ -459,10 +452,6 @@ class FilePicker(QWidget):
         self._determine_and_setup_history_dir()  # Setup history location
         self._determine_and_setup_history_dir()
 
-        # --- load auto-copy preference ---
-        settings = QSettings("Bastet", "FileKitty")
-        self.auto_copy = settings.value("autoCopyOnImport", "true") == "true"
-
         self.staleCheckTimer = QTimer(self)
         self.staleCheckTimer.timeout.connect(self._poll_stale_status)
         if self.history_dir:  # Start polling only if history is enabled
@@ -559,7 +548,7 @@ class FilePicker(QWidget):
         btnOpen.clicked.connect(self.openFiles)
         actionButtonLayout.addWidget(btnOpen)
 
-        self.btnSelectClassesFunctions = QPushButton("🔍 Select Code", self)  # Renamed slightly
+        self.btnSelectClassesFunctions = QPushButton("🔍 Select Code", self)
         self.btnSelectClassesFunctions.setToolTip("Select specific classes/functions from Python files")
         self.btnSelectClassesFunctions.clicked.connect(self.selectClassesFunctions)
         self.btnSelectClassesFunctions.setEnabled(False)  # Disabled initially
@@ -571,14 +560,31 @@ class FilePicker(QWidget):
         self.btnRefresh.setEnabled(False)  # Disabled initially
         actionButtonLayout.addWidget(self.btnRefresh)
 
-        self.btnCopy = QPushButton("📋 Copy", self)  # Shortened label
+        self.btnCopy = QPushButton("📋 Copy", self)
         self.btnCopy.setToolTip("Copy the generated text to the clipboard")
         self.btnCopy.clicked.connect(self.copyToClipboard)
         self.btnCopy.setEnabled(False)  # Disabled initially
         actionButtonLayout.addWidget(self.btnCopy)
 
-        # --- Add the Drag Out Button ---
-        self.btnDragOut = DragOutButton(self.textEdit, self)  # Pass textEdit and parent (self)
+        # --- Auto-Copy Checkbox ---
+        self.autoCopyCheckBox = QCheckBox("Auto-Copy", self)
+        self.autoCopyCheckBox.setToolTip(
+            "When checked, copies output to the clipboard automatically after loading files."
+        )
+        # Load from QSettings
+        settings = QSettings("Bastet", "FileKitty")
+        auto_copy_value = settings.value("autoCopyOnImport")
+        if auto_copy_value is None:
+            self.auto_copy = True
+        else:
+            self.auto_copy = auto_copy_value == "true"
+        self.autoCopyCheckBox.setChecked(self.auto_copy)
+        # Connect to toggle handler
+        self.autoCopyCheckBox.stateChanged.connect(self.toggleAutoCopy)
+        actionButtonLayout.addWidget(self.autoCopyCheckBox)
+
+        # --- Drag Out Button ---
+        self.btnDragOut = DragOutButton(self.textEdit, self)
         self.btnDragOut.setEnabled(False)  # Disabled initially
         actionButtonLayout.addWidget(self.btnDragOut)
 
@@ -596,6 +602,12 @@ class FilePicker(QWidget):
         # Connect signals
         self.textEdit.textChanged.connect(self.updateLineCountAndActionButtons)  # Updated method name
         self.setLayout(self.mainLayout)
+
+    def toggleAutoCopy(self, state):
+        self.auto_copy = state == Qt.Checked
+        settings = QSettings("Bastet", "FileKitty")
+        settings.setValue("autoCopyOnImport", "true" if self.auto_copy else "false")
+        print(f"Auto-Copy preference updated: {self.auto_copy}")
 
     def createActions(self):
         # History Navigation
