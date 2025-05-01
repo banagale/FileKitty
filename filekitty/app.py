@@ -195,6 +195,22 @@ class PreferencesDialog(QDialog):
         historyPathLayout.addWidget(btnBrowseHistory)
         formLayout.addRow(QLabel("History Storage Directory:"), historyPathLayout)
 
+        # --- Include Date Modified Checkbox ---
+        self.includeTimestampCheck = QCheckBox("Add Date Modified to Output by Default", self)
+        settings = QSettings("Bastet", "FileKitty")
+        include_timestamp = settings.value("includeDateModified", "true")
+        self.includeTimestampCheck.setChecked(include_timestamp == "true")
+        formLayout.addRow(self.includeTimestampCheck)
+
+        # --- Use LLM Optimized Timestamp Format ---
+        self.useLlmTimestampCheck = QCheckBox("Use LLM Optimized Timestamp Format (ISO 8601)", self)
+        use_llm_timestamp = settings.value("useLlmTimestamp", "false")
+        self.useLlmTimestampCheck.setChecked(use_llm_timestamp == "true")
+        self.useLlmTimestampCheck.setEnabled(self.includeTimestampCheck.isChecked())
+        formLayout.addRow(self.useLlmTimestampCheck)
+
+        self.includeTimestampCheck.stateChanged.connect(self.updateLlmTimestampEnabled)
+
         mainLayout.addLayout(formLayout)
 
         buttonLayout = QHBoxLayout()
@@ -208,6 +224,10 @@ class PreferencesDialog(QDialog):
         mainLayout.addLayout(buttonLayout)
 
         self.setLayout(mainLayout)
+
+    def updateLlmTimestampEnabled(self, state):
+        # Disable the LLM checkbox if the main "include timestamp" box is unchecked
+        self.useLlmTimestampCheck.setEnabled(state == Qt.Checked)
 
     def browseDefaultPath(self):
         dir_path = QFileDialog.getExistingDirectory(
@@ -235,12 +255,13 @@ class PreferencesDialog(QDialog):
             QMessageBox.warning(self, "Invalid Path", f"History path is not a valid directory:\n{history_path}")
             return
 
-        # Check if history path *will* change before saving settings
         self.history_path_changed = history_path != self.initial_history_base_path
 
         settings = QSettings("Bastet", "FileKitty")
         settings.setValue(SETTINGS_DEFAULT_PATH_KEY, self.get_default_path())
         settings.setValue(SETTINGS_HISTORY_PATH_KEY, history_path)
+        settings.setValue("includeDateModified", "true" if self.includeTimestampCheck.isChecked() else "false")
+        settings.setValue("useLlmTimestamp", "true" if self.useLlmTimestampCheck.isChecked() else "false")
         super().accept()
 
 
@@ -450,7 +471,11 @@ class FilePicker(QWidget):
         self._dragged_out_temp_files: list[str] = []  # Track temp files for cleanup
 
         self._determine_and_setup_history_dir()  # Setup history location
-        self._determine_and_setup_history_dir()
+
+        # --- Load preferences for timestamps ---
+        settings = QSettings("Bastet", "FileKitty")
+        self.include_date_modified = settings.value("includeDateModified", "true") == "true"
+        self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
 
         self.staleCheckTimer = QTimer(self)
         self.staleCheckTimer.timeout.connect(self._poll_stale_status)
@@ -536,7 +561,7 @@ class FilePicker(QWidget):
         # Text Edit Area
         self.textEdit = QTextEdit(self)
         self.textEdit.setReadOnly(True)
-        self.textEdit.setFontFamily("monospace")  # Use a monospaced font
+        self.textEdit.setFontFamily("Menlo")  # Use a monospaced font
         centralLayout.addWidget(self.textEdit, 1)  # Give textEdit stretch factor
 
         # --- Action Buttons Layout ---
@@ -680,6 +705,10 @@ class FilePicker(QWidget):
         if dialog.exec_():
             # Settings are saved within the dialog's accept() method
             # Check if the history path setting actually triggered a change
+            settings = QSettings("Bastet", "FileKitty")
+            self.include_date_modified = settings.value("includeDateModified", "true") == "true"
+            self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
+
             if dialog.history_path_changed:
                 print("History path setting changed.")
                 # The dialog now sets the flag, read the new base path from settings if needed
@@ -773,23 +802,23 @@ class FilePicker(QWidget):
 
         for file_path in self.currentFiles:
             sanitized_path = self.sanitize_path(file_path)
-            item = QListWidgetItem(sanitized_path)
+            display_text = sanitized_path
+
+            item = QListWidgetItem(display_text)
 
             is_txt = is_text_file(file_path)
             if not is_txt:
                 # Grey out and disable non-text files slightly differently
                 item.setForeground(QColor(Qt.gray))
-                # Keep selectable to allow removal, but indicate it's non-text
                 item.setToolTip("Binary or non-standard text file, content not shown.")
-                # item.setFlags(item.flags() & ~Qt.ItemIsEnabled) # Keep enabled
             elif file_path.endswith(".py"):
-                has_python_text_files = True  # Track if selectable Python files exist
+                has_python_text_files = True
 
             self.fileList.addItem(item)
 
         # Enable "Select Code" only if there are Python text files
         self.btnSelectClassesFunctions.setEnabled(has_python_text_files)
-        self.btnRefresh.setEnabled(has_files)  # Enable refresh if there are any files
+        self.btnRefresh.setEnabled(has_files)
 
     def selectClassesFunctions(self):
         """Opens the dialog to select specific classes/functions from Python files."""
@@ -942,6 +971,19 @@ class FilePicker(QWidget):
 
             sanitized_path = self.sanitize_path(file_path)
             try:
+                # Get date modified string for output (LLM-friendly)
+                stat = Path(file_path).stat()
+                if self.use_llm_timestamp:
+                    mtime = datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat()
+                else:
+                    mtime = datetime.fromtimestamp(stat.st_mtime).astimezone().strftime("%b %d, %Y %I:%M %p %Z")
+
+                modified_line_for_output = f"**Last modified: {mtime}**"
+
+            except Exception as e:
+                print(f"Warning: Could not retrieve modified time for {file_path}: {e}")
+                modified_line_for_output = "**Last modified: ?**"
+            try:
                 # Process Python files (potentially filtering classes/functions)
                 if file_path.endswith(".py"):
                     classes, functions, _, file_content = parse_python_file(file_path)
@@ -968,19 +1010,29 @@ class FilePicker(QWidget):
                         )
 
                         if items_to_extract:  # Only proceed if there are relevant items to extract
-                            filtered_code = extract_code_and_imports(file_content, items_to_extract, sanitized_path)
+                            filtered_code = extract_code_and_imports(
+                                file_content, items_to_extract, sanitized_path, modified_line_for_output
+                            )
                             if filtered_code.strip():  # Add only if extraction yielded something
                                 combined_code += filtered_code + "\n\n"  # Add extra newline between extracts
                         # If filtering yields nothing for this file, we implicitly skip its content
 
                     else:  # Not filtering this Python file, include its whole content
-                        combined_code += f"# {sanitized_path}\n\n```python\n{file_content.strip()}\n```\n\n"
+                        combined_code += (
+                            f"# {sanitized_path}\n"
+                            f"{modified_line_for_output}\n\n"
+                            f"```python\n"
+                            f"{file_content.strip()}\n"
+                            f"```\n\n"
+                        )
 
                 # Process other (text) file types
                 else:
                     file_content = read_file_contents(file_path)
                     lang = self.detect_language(file_path)  # Get language hint for markdown
-                    combined_code += f"# {sanitized_path}\n\n```{lang}\n{file_content.strip()}\n```\n\n"
+                    combined_code += (
+                        f"# {sanitized_path}\n{modified_line_for_output}\n\n```{lang}\n{file_content.strip()}\n```\n\n"
+                    )
 
             except FileNotFoundError:
                 parse_errors.append(f"{sanitized_path}: File not found")
@@ -1050,7 +1102,6 @@ class FilePicker(QWidget):
         if event.mimeData().hasUrls():
             files_to_add = []
             dropped_urls = event.mimeData().urls()
-            print(f"Drop event with {len(dropped_urls)} URLs detected.")  # Debug print
 
             for url in dropped_urls:
                 if url.isLocalFile():
@@ -1476,7 +1527,9 @@ def parse_python_file(file_path):
         raise RuntimeError(f"Failed to parse Python file {Path(file_path).name}: {e}") from e
 
 
-def extract_code_and_imports(file_content: str, selected_items: list[str], file_path_for_header: str) -> str:
+def extract_code_and_imports(
+    file_content: str, selected_items: list[str], file_path_for_header: str, modified_line_for_output: str
+) -> str:
     """
     Extracts code for selected top-level classes/functions and relevant imports.
     Uses ast.unparse if possible for cleaner extraction.
@@ -1505,7 +1558,7 @@ def extract_code_and_imports(file_content: str, selected_items: list[str], file_
         relevant_imports.update(all_imports_in_file)
 
     # --- Format Output ---
-    output_parts = [f"# Code from: {file_path_for_header}"]
+    output_parts = [f"# Code from: {file_path_for_header}", modified_line_for_output]
     if relevant_imports:
         output_parts.append("\n# Imports (potentially includes more than needed):")
         output_parts.extend(sorted(list(relevant_imports)))
