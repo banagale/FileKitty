@@ -1,14 +1,15 @@
 import ast
 import atexit
 import hashlib
+import io
 import json
 import os
+import re
 import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-# Keep existing PyQt5 imports and add new ones
 from PyQt5.QtCore import QEvent, QMimeData, QSettings, QSize, QStandardPaths, Qt, QTimer, QUrl
 from PyQt5.QtGui import (
     QColor,
@@ -37,12 +38,15 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QStyle,
     QTextEdit,
     QToolBar,
     QVBoxLayout,
     QWidget,
 )
+from rich.console import Console
+from rich.tree import Tree
 
 ICON_PATH = "assets/icon/FileKitty-icon.png"
 HISTORY_DIR_NAME = "FileKittyHistory"
@@ -67,6 +71,51 @@ class FileKittyApp(QApplication):
 
 
 # --- Helper Function ---
+def generate_project_tree(root: Path | str, ignore_regex: re.Pattern, max_depth: int = 5, expand: bool = True) -> str:
+    """
+    Return a plain-text folder tree for *root* (≤ *max_depth* levels),
+    excluding any file or directory whose name matches *ignore_regex*.
+
+    If *expand* is True, expands '~' in the path.
+    """
+    root = Path(root)
+    if expand:
+        root = root.expanduser()
+    print(f"generate_project_tree: scanning root: {root.resolve()}")
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120, soft_wrap=True)
+
+    def add_branch(path: Path, branch: Tree, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            children = list(path.iterdir())
+            print(f"{path} contains {len(children)} children")
+            for child in sorted(children, key=lambda x: (x.is_file(), x.name.lower())):
+                if ignore_regex:
+                    ignored = ignore_regex.search(child.name)
+                else:
+                    ignored = None
+                print(f"Found: {child} (is_dir={child.is_dir()}, ignored={ignored})")
+                if ignored:
+                    continue
+                node = branch.add(child.name)
+                if child.is_dir():
+                    add_branch(child, node, depth + 1)
+        except PermissionError:
+            branch.add("[permission-denied]")
+
+    tree_root = Tree(".")
+    add_branch(root, tree_root, 1)
+    console.print(tree_root)
+    return buffer.getvalue().rstrip()
+
+    tree_root = Tree(".")
+    add_branch(root, tree_root, 1)
+    console.print(tree_root)
+    return buffer.getvalue().rstrip()
+
+
 def is_text_file(file_path: str) -> bool:
     """
     Attempts to determine if a file is likely a text file.
@@ -90,6 +139,53 @@ def is_text_file(file_path: str) -> bool:
     except Exception:
         # Catch any other unexpected errors during check
         return False
+
+
+class TreeDropZone(QPushButton):
+    """
+    Narrow button that sits beside 'Drag Out as file'.
+    Accepts *only* folder drops and triggers tree generation.
+    """
+
+    def __init__(self, parent: "FilePicker"):
+        super().__init__("🌲  Drop folder to make tree", parent)
+        self.parent = parent
+        self.setAcceptDrops(True)
+
+        self._style_normal = (
+            "padding: 5px 10px; font-size: 12px; border: 1px dashed #666; "
+            "border-radius: 6px; background: #f4f4f4;"
+        )
+        self._style_error = (
+            "padding: 5px 10px; font-size: 12px; border: 1px solid #d33; "
+            "border-radius: 6px; background: #ffecec;"
+        )
+        self.setStyleSheet(self._style_normal)
+
+        self._error_flash = QTimer(self)
+        self._error_flash.setSingleShot(True)
+        self._error_flash.timeout.connect(lambda: self.setStyleSheet(self._style_normal))
+
+    # --- drag events ----------------------------------------------------------
+    def dragEnterEvent(self, e: QDragEnterEvent):
+        if not e.mimeData().hasUrls():
+            e.ignore()
+            return
+        urls = e.mimeData().urls()
+        if urls and all(Path(u.toLocalFile()).is_dir() for u in urls):
+            e.acceptProposedAction()
+        else:
+            # visual reject feedback
+            self.setStyleSheet(self._style_error)
+            self._error_flash.start(900)
+            e.ignore()
+
+    def dropEvent(self, e: QDropEvent):
+        for url in e.mimeData().urls():
+            path = Path(url.toLocalFile())
+            if path.is_dir():
+                self.parent._append_folder_tree(path)
+        e.acceptProposedAction()
 
 
 # --- Drag Out Button ---
@@ -172,58 +268,73 @@ class PreferencesDialog(QDialog):
         self.history_path_changed = False  # Flag to track if history path changed
 
     def initUI(self):
-        mainLayout = QVBoxLayout(self)
-        formLayout = QFormLayout()
-
-        self.defaultPathEdit = QLineEdit(self)
-        self.defaultPathEdit.setPlaceholderText("Leave blank to use system default (e.g., Documents)")
-        self.defaultPathEdit.setToolTip("The starting directory for the 'Select Files' dialog.")
-        btnBrowseDefault = QPushButton("Browse...")
-        btnBrowseDefault.clicked.connect(self.browseDefaultPath)
-        defaultPathLayout = QHBoxLayout()
-        defaultPathLayout.addWidget(self.defaultPathEdit, 1)
-        defaultPathLayout.addWidget(btnBrowseDefault)
-        formLayout.addRow(QLabel("Default 'Select Files' Directory:"), defaultPathLayout)
-
-        self.historyPathEdit = QLineEdit(self)
-        self.historyPathEdit.setPlaceholderText("Leave blank to use default temporary location")
-        self.historyPathEdit.setToolTip(f"Folder where history snapshots ({HISTORY_DIR_NAME}) will be stored.")
-        btnBrowseHistory = QPushButton("Browse...")
-        btnBrowseHistory.clicked.connect(self.browseHistoryPath)
-        historyPathLayout = QHBoxLayout()
-        historyPathLayout.addWidget(self.historyPathEdit, 1)
-        historyPathLayout.addWidget(btnBrowseHistory)
-        formLayout.addRow(QLabel("History Storage Directory:"), historyPathLayout)
-
-        # --- Include Date Modified Checkbox ---
-        self.includeTimestampCheck = QCheckBox("Add Date Modified to Output by Default", self)
         settings = QSettings("Bastet", "FileKitty")
-        include_timestamp = settings.value("includeDateModified", "true")
-        self.includeTimestampCheck.setChecked(include_timestamp == "true")
-        formLayout.addRow(self.includeTimestampCheck)
+        main = QVBoxLayout(self)
+        form = QFormLayout()
 
-        # --- Use LLM Optimized Timestamp Format ---
-        self.useLlmTimestampCheck = QCheckBox("Use LLM Optimized Timestamp Format (ISO 8601)", self)
-        use_llm_timestamp = settings.value("useLlmTimestamp", "false")
-        self.useLlmTimestampCheck.setChecked(use_llm_timestamp == "true")
+        # --- default open path ----------------------------------------------------
+        self.defaultPathEdit = QLineEdit(self)
+        self.defaultPathEdit.setPlaceholderText("Leave blank to use Documents folder")
+        browse_def = QPushButton("Browse…", self)
+        browse_def.clicked.connect(self.browseDefaultPath)
+        h1 = QHBoxLayout()
+        h1.addWidget(self.defaultPathEdit, 1)
+        h1.addWidget(browse_def)
+        form.addRow(QLabel("Default 'Select Files' path:"), h1)
+
+        # --- history path ---------------------------------------------------------
+        self.historyPathEdit = QLineEdit(self)
+        self.historyPathEdit.setPlaceholderText("Leave blank for system temp")
+        browse_hist = QPushButton("Browse…", self)
+        browse_hist.clicked.connect(self.browseHistoryPath)
+        h2 = QHBoxLayout()
+        h2.addWidget(self.historyPathEdit, 1)
+        h2.addWidget(browse_hist)
+        form.addRow(QLabel("History storage folder:"), h2)
+
+        # --- show modified timestamp ---------------------------------------------
+        self.includeTimestampCheck = QCheckBox("Add 'last modified' line by default", self)
+        self.includeTimestampCheck.setChecked(settings.value("includeDateModified", "true") == "true")
+        form.addRow(self.includeTimestampCheck)
+
+        self.useLlmTimestampCheck = QCheckBox("Use ISO‑8601 timestamp", self)
+        self.useLlmTimestampCheck.setChecked(settings.value("useLlmTimestamp", "false") == "true")
         self.useLlmTimestampCheck.setEnabled(self.includeTimestampCheck.isChecked())
-        formLayout.addRow(self.useLlmTimestampCheck)
+        self.includeTimestampCheck.stateChanged.connect(
+            lambda s: self.useLlmTimestampCheck.setEnabled(s == Qt.Checked)
+        )
+        form.addRow(self.useLlmTimestampCheck)
 
-        self.includeTimestampCheck.stateChanged.connect(self.updateLlmTimestampEnabled)
+        # ── tree ignore pattern ---------------------------------------------------
+        self.treeIgnoreEdit = QLineEdit(self)
+        self.treeIgnoreEdit.setText(
+            settings.value(
+                "treeIgnorePattern",
+                "__pycache__|\\.git|\\.DS_Store|\\.idea|\\.ruff_cache|\\.venv|"
+                "\\.pytest_cache|tmp|run_history|artifacts|__init__\\.py|"
+                "\\.pre-commit-config\\.yaml|\\.env|\\.env\\.sample|\\.envrc|CLAUDE\\.md",
+            )
+        )
+        form.addRow(QLabel("Tree ignore regex:"), self.treeIgnoreEdit)
 
-        mainLayout.addLayout(formLayout)
+        # ── tree depth ------------------------------------------------------------
+        self.treeDepthSpin = QSpinBox(self)
+        self.treeDepthSpin.setRange(1, 10)
+        self.treeDepthSpin.setValue(int(settings.value("treeMaxDepth", "5")))
+        form.addRow(QLabel("Tree max depth:"), self.treeDepthSpin)
 
-        buttonLayout = QHBoxLayout()
-        buttonLayout.addStretch()
-        btnSave = QPushButton("Save")
-        btnCancel = QPushButton("Cancel")
-        buttonLayout.addWidget(btnSave)
-        buttonLayout.addWidget(btnCancel)
-        btnSave.clicked.connect(self.accept)
-        btnCancel.clicked.connect(self.reject)
-        mainLayout.addLayout(buttonLayout)
+        main.addLayout(form)
 
-        self.setLayout(mainLayout)
+        # --- buttons --------------------------------------------------------------
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        ok = QPushButton("Save", self)
+        cancel = QPushButton("Cancel", self)
+        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+        buttons.addWidget(ok)
+        buttons.addWidget(cancel)
+        main.addLayout(buttons)
 
     def updateLlmTimestampEnabled(self, state):
         # Disable the LLM checkbox if the main "include timestamp" box is unchecked
@@ -250,18 +361,20 @@ class PreferencesDialog(QDialog):
         return self.historyPathEdit.text().strip()
 
     def accept(self):
-        history_path = self.get_history_base_path()
-        if history_path and not os.path.isdir(history_path):
-            QMessageBox.warning(self, "Invalid Path", f"History path is not a valid directory:\n{history_path}")
+        hist_path = self.get_history_base_path()
+        if hist_path and not os.path.isdir(hist_path):
+            QMessageBox.warning(self, "Invalid path", f"{hist_path} is not a directory.")
             return
-
-        self.history_path_changed = history_path != self.initial_history_base_path
 
         settings = QSettings("Bastet", "FileKitty")
         settings.setValue(SETTINGS_DEFAULT_PATH_KEY, self.get_default_path())
-        settings.setValue(SETTINGS_HISTORY_PATH_KEY, history_path)
+        settings.setValue(SETTINGS_HISTORY_PATH_KEY, hist_path)
         settings.setValue("includeDateModified", "true" if self.includeTimestampCheck.isChecked() else "false")
         settings.setValue("useLlmTimestamp", "true" if self.useLlmTimestampCheck.isChecked() else "false")
+        settings.setValue("treeIgnorePattern", self.treeIgnoreEdit.text().strip())
+        settings.setValue("treeMaxDepth", self.treeDepthSpin.value())
+
+        self.history_path_changed = hist_path != self.initial_history_base_path
         super().accept()
 
 
@@ -457,44 +570,149 @@ class FilePicker(QWidget):
         super().__init__()
         self.setWindowTitle("FileKitty")
         self.setWindowIcon(QIcon(ICON_PATH))
-        self.setGeometry(100, 100, 900, 700)  # Increased default width slightly
-        self.setAcceptDrops(True)  # Allow dropping files onto the main window
+        self.setGeometry(100, 100, 900, 700)
+        self.setAcceptDrops(True)
+
+        # core state
         self.currentFiles: list[str] = []
         self.selected_items: list[str] = []
-        self.selection_mode: str = "All Files"  # or "Single File"
-        self.selected_file: str | None = None  # Path of the single selected file
-        self.history_dir: str = ""  # Path to the history storage directory
-        self.history_base_path: str = ""  # User-defined base path (or "" if default)
-        self.history: list[dict] = []  # List of state dictionaries
-        self.history_index: int = -1  # Current position in history
-        self._is_loading_state: bool = False  # Flag to prevent updates during state load
-        self._dragged_out_temp_files: list[str] = []  # Track temp files for cleanup
+        self.selection_mode = "All Files"
+        self.selected_file: str | None = None
 
-        self._determine_and_setup_history_dir()  # Setup history location
+        # history location
+        self.history_dir = ""
+        self.history_base_path = ""
+        self.history: list[dict] = []
+        self.history_index = -1
 
-        # --- Load preferences for timestamps ---
-        settings = QSettings("Bastet", "FileKitty")
-        self.include_date_modified = settings.value("includeDateModified", "true") == "true"
-        self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
+        # housekeeping
+        self._is_loading_state = False
+        self._dragged_out_temp_files: list[str] = []
+        self._determine_and_setup_history_dir()
 
-        self.staleCheckTimer = QTimer(self)
-        self.staleCheckTimer.timeout.connect(self._poll_stale_status)
-        if self.history_dir:  # Start polling only if history is enabled
-            self.staleCheckTimer.start(STALE_CHECK_INTERVAL_MS)
+        # preferences
+        s = QSettings("Bastet", "FileKitty")
+        self.include_date_modified = s.value("includeDateModified", "true") == "true"
+        self.use_llm_timestamp = s.value("useLlmTimestamp", "false") == "true"
+        tree_ignore_raw = s.value("treeIgnorePattern", "").strip()
+        self.tree_ignore_pattern = re.compile(tree_ignore_raw) if tree_ignore_raw else None
+        self.tree_max_depth = int(s.value("treeMaxDepth", "5"))
 
+        # ui & timers
         self.initUI()
         self.createActions()
         self.populateToolbar()
         self.createMenu()
-        self._update_history_ui()  # Initialize history button states etc.
+        self._update_history_ui()
 
-        # Register cleanup functions for application exit
+        self.staleCheckTimer = QTimer(self)
+        self.staleCheckTimer.timeout.connect(self._poll_stale_status)
+        if self.history_dir:
+            self.staleCheckTimer.start(STALE_CHECK_INTERVAL_MS)
+
         atexit.register(self._cleanup_history_files)
         atexit.register(self._cleanup_drag_out_files)
 
-        # --- open any files passed in on launch (Dock / Cmd-Tab) ---
         if initial_files:
             self._update_files_and_maybe_create_state(sorted(initial_files))
+
+    def initUI(self):
+        self.mainLayout = QVBoxLayout(self)
+        self.mainLayout.setContentsMargins(0, 0, 0, 0)
+
+        # Toolbar
+        self.toolbar = QToolBar("History Toolbar")
+        self.toolbar.setIconSize(QSize(22, 22))
+        self.mainLayout.addWidget(self.toolbar)
+
+        # Central container
+        central = QWidget()
+        centralLayout = QVBoxLayout(central)
+        self.mainLayout.addWidget(central, 1)
+
+        # File list
+        self.fileList = QListWidget(self)
+        centralLayout.addWidget(self.fileList)
+
+        # Tree‑drop zone
+        self.treeDrop = TreeDropZone(self)
+        centralLayout.addWidget(self.treeDrop)
+
+        # Text‑edit output
+        self.textEdit = QTextEdit(self)
+        self.textEdit.setReadOnly(True)
+        self.textEdit.setFontFamily("Menlo")
+        centralLayout.addWidget(self.textEdit, 1)
+
+        # --- buttons row (unchanged except for existing refs) ---
+        actionRow = QHBoxLayout()
+        btnOpen = QPushButton("📂 Select Files", self)
+        btnOpen.clicked.connect(self.openFiles)
+        actionRow.addWidget(btnOpen)
+
+        self.btnSelectClassesFunctions = QPushButton("🔍 Select Code", self)
+        self.btnSelectClassesFunctions.clicked.connect(self.selectClassesFunctions)
+        self.btnSelectClassesFunctions.setEnabled(False)
+        actionRow.addWidget(self.btnSelectClassesFunctions)
+
+        self.btnRefresh = QPushButton("🔄 Refresh", self)
+        self.btnRefresh.clicked.connect(self.refreshText)
+        self.btnRefresh.setEnabled(False)
+        actionRow.addWidget(self.btnRefresh)
+
+        self.btnCopy = QPushButton("📋 Copy", self)
+        self.btnCopy.clicked.connect(self.copyToClipboard)
+        self.btnCopy.setEnabled(False)
+        actionRow.addWidget(self.btnCopy)
+
+        self.autoCopyCheckBox = QCheckBox("Auto-Copy", self)
+        auto_val = QSettings("Bastet", "FileKitty").value("autoCopyOnImport")
+        self.auto_copy = auto_val != "false"
+        self.autoCopyCheckBox.setChecked(self.auto_copy)
+        self.autoCopyCheckBox.stateChanged.connect(self.toggleAutoCopy)
+        actionRow.addWidget(self.autoCopyCheckBox)
+
+        self.btnDragOut = DragOutButton(self.textEdit, self)
+        self.btnDragOut.setEnabled(False)
+        actionRow.addWidget(self.btnDragOut)
+
+        actionRow.addStretch()
+        self.mainLayout.addLayout(actionRow)
+
+        # Status bar
+        statusRow = QHBoxLayout()
+        self.lineCountLabel = QLabel("Lines: 0")
+        statusRow.addWidget(self.lineCountLabel)
+        self.mainLayout.addLayout(statusRow)
+
+        self.textEdit.textChanged.connect(self.updateLineCountAndActionButtons)
+        self.setLayout(self.mainLayout)
+
+    def _append_folder_tree(self, folder: Path) -> None:
+        """
+        Generate a folder tree for *folder* and append it to the QTextEdit.
+        Provides robust error handling and is reusable by future prompt composition.
+        """
+        try:
+            tree_md = generate_project_tree(folder, self.tree_ignore_pattern, self.tree_max_depth, expand=True)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Tree Generation Error",
+                f"Could not generate tree for:\n{folder}\n\n{exc}",
+            )
+            return
+
+        header = f"# Folder Tree of {self.sanitize_path(str(folder))} <!--filekitty:tree:{folder}-->"
+        block = f"{header}\n\n```text\n{tree_md}\n```\n"
+
+        cursor = self.textEdit.textCursor()
+        cursor.movePosition(cursor.End)
+        if cursor.position() > 0:
+            cursor.insertText("\n")
+        cursor.insertText(block)
+        self.textEdit.setTextCursor(cursor)
+        self.updateLineCountAndActionButtons()
 
     def _determine_and_setup_history_dir(self) -> None:
         """Reads settings and sets up the history directory path."""
@@ -539,94 +757,6 @@ class FilePicker(QWidget):
         """Handles files opened via Dock or Finder."""
         # You could add logic to append to the current file list or replace:
         self._update_files_and_maybe_create_state([file_path])
-
-    def initUI(self):
-        self.mainLayout = QVBoxLayout(self)
-        self.mainLayout.setContentsMargins(0, 0, 0, 0)  # Use full window space
-
-        # Toolbar
-        self.toolbar = QToolBar("History Toolbar")
-        self.toolbar.setIconSize(QSize(22, 22))
-        self.mainLayout.addWidget(self.toolbar)
-
-        # Central Widget Area (holds file list and text edit)
-        centralWidget = QWidget()
-        centralLayout = QVBoxLayout(centralWidget)
-        self.mainLayout.addWidget(centralWidget, 1)  # Give it stretch factor
-
-        # File List
-        self.fileList = QListWidget(self)
-        centralLayout.addWidget(self.fileList)  # Add to central layout
-
-        # Text Edit Area
-        self.textEdit = QTextEdit(self)
-        self.textEdit.setReadOnly(True)
-        self.textEdit.setFontFamily("Menlo")  # Use a monospaced font
-        centralLayout.addWidget(self.textEdit, 1)  # Give textEdit stretch factor
-
-        # --- Action Buttons Layout ---
-        actionButtonLayout = QHBoxLayout()
-        actionButtonLayout.setContentsMargins(5, 5, 5, 5)  # Add some padding
-
-        btnOpen = QPushButton("📂 Select Files", self)
-        btnOpen.setToolTip("Open the file selection dialog")
-        btnOpen.clicked.connect(self.openFiles)
-        actionButtonLayout.addWidget(btnOpen)
-
-        self.btnSelectClassesFunctions = QPushButton("🔍 Select Code", self)
-        self.btnSelectClassesFunctions.setToolTip("Select specific classes/functions from Python files")
-        self.btnSelectClassesFunctions.clicked.connect(self.selectClassesFunctions)
-        self.btnSelectClassesFunctions.setEnabled(False)  # Disabled initially
-        actionButtonLayout.addWidget(self.btnSelectClassesFunctions)
-
-        self.btnRefresh = QPushButton("🔄 Refresh", self)
-        self.btnRefresh.setToolTip("Reload content from the selected files")
-        self.btnRefresh.clicked.connect(self.refreshText)
-        self.btnRefresh.setEnabled(False)  # Disabled initially
-        actionButtonLayout.addWidget(self.btnRefresh)
-
-        self.btnCopy = QPushButton("📋 Copy", self)
-        self.btnCopy.setToolTip("Copy the generated text to the clipboard")
-        self.btnCopy.clicked.connect(self.copyToClipboard)
-        self.btnCopy.setEnabled(False)  # Disabled initially
-        actionButtonLayout.addWidget(self.btnCopy)
-
-        # --- Auto-Copy Checkbox ---
-        self.autoCopyCheckBox = QCheckBox("Auto-Copy", self)
-        self.autoCopyCheckBox.setToolTip(
-            "When checked, copies output to the clipboard automatically after loading files."
-        )
-        # Load from QSettings
-        settings = QSettings("Bastet", "FileKitty")
-        auto_copy_value = settings.value("autoCopyOnImport")
-        if auto_copy_value is None:
-            self.auto_copy = True
-        else:
-            self.auto_copy = auto_copy_value == "true"
-        self.autoCopyCheckBox.setChecked(self.auto_copy)
-        # Connect to toggle handler
-        self.autoCopyCheckBox.stateChanged.connect(self.toggleAutoCopy)
-        actionButtonLayout.addWidget(self.autoCopyCheckBox)
-
-        # --- Drag Out Button ---
-        self.btnDragOut = DragOutButton(self.textEdit, self)
-        self.btnDragOut.setEnabled(False)  # Disabled initially
-        actionButtonLayout.addWidget(self.btnDragOut)
-
-        actionButtonLayout.addStretch()  # Push buttons to the left
-
-        self.mainLayout.addLayout(actionButtonLayout)  # Add buttons below central widget
-
-        # Status Bar Layout
-        statusBarLayout = QHBoxLayout()
-        statusBarLayout.setContentsMargins(5, 2, 5, 2)  # Small margins
-        self.lineCountLabel = QLabel("Lines: 0")
-        statusBarLayout.addWidget(self.lineCountLabel)
-        self.mainLayout.addLayout(statusBarLayout)  # Add status bar at the bottom
-
-        # Connect signals
-        self.textEdit.textChanged.connect(self.updateLineCountAndActionButtons)  # Updated method name
-        self.setLayout(self.mainLayout)
 
     def toggleAutoCopy(self, state):
         self.auto_copy = state == Qt.Checked
@@ -699,21 +829,15 @@ class FilePicker(QWidget):
         historyMenu.addAction(self.forwardAction)
 
     def showPreferences(self):
-        current_default_path = self.get_default_path()
-        current_history_base_path = self.history_base_path  # Use the stored base path
-        dialog = PreferencesDialog(current_default_path, current_history_base_path, self)
-        if dialog.exec_():
-            # Settings are saved within the dialog's accept() method
-            # Check if the history path setting actually triggered a change
-            settings = QSettings("Bastet", "FileKitty")
-            self.include_date_modified = settings.value("includeDateModified", "true") == "true"
-            self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
-
-            if dialog.history_path_changed:
-                print("History path setting changed.")
-                # The dialog now sets the flag, read the new base path from settings if needed
-                new_history_base_path = dialog.get_history_base_path()
-                self._change_history_directory(new_history_base_path)
+        dlg = PreferencesDialog(self.get_default_path(), self.history_base_path, self)
+        if dlg.exec_():
+            s = QSettings("Bastet", "FileKitty")
+            self.include_date_modified = s.value("includeDateModified", "true") == "true"
+            self.use_llm_timestamp = s.value("useLlmTimestamp", "false") == "true"
+            self.tree_ignore_pattern = re.compile(s.value("treeIgnorePattern", ""))
+            self.tree_max_depth = int(s.value("treeMaxDepth", "5"))
+            if dlg.history_path_changed:
+                self._change_history_directory(dlg.get_history_base_path())
 
     def _change_history_directory(self, new_base_path: str):
         """Handles changing the history storage location."""
@@ -922,7 +1046,7 @@ class FilePicker(QWidget):
             if str_path.startswith(str_home):
                 # Ensure a path separator follows the home dir part before replacing
                 if len(str_path) > len(str_home) and str_path[len(str_home)] in (os.sep, os.altsep):
-                    return "~" + str_path[len(str_home) :]
+                    return "~" + str_path[len(str_home):]
                 elif len(str_path) == len(str_home):  # Exact match to home dir
                     return "~"
             # If not relative to home, return the absolute path
@@ -1092,6 +1216,11 @@ class FilePicker(QWidget):
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         # Accept the drag event if it contains URLs (files or directories)
+        # This should get adapted to only highlight the drop zone it is over, and do it correctly.
+        # self.setStyleSheet(
+        #     "font-size: 15px; padding: 25px; border: 2px dashed gray;"
+        #     "border-radius: 8px; background: palette(base);"
+        # )
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
@@ -1210,7 +1339,7 @@ class FilePicker(QWidget):
             # Manage history list: remove future states if branching
             if self.history_index < len(self.history) - 1:
                 # Remove states after the current one
-                states_to_remove = self.history[self.history_index + 1 :]
+                states_to_remove = self.history[self.history_index + 1:]
                 self.history = self.history[: self.history_index + 1]
                 # Delete the corresponding JSON files
                 for old_state in states_to_remove:
@@ -1595,7 +1724,7 @@ class CodeExtractor(ast.NodeVisitor):
             else:
                 # Multi-line segment
                 first_line = self.file_content_lines[start_line][start_col:]
-                middle_lines = self.file_content_lines[start_line + 1 : end_line]
+                middle_lines = self.file_content_lines[start_line + 1: end_line]
                 last_line = self.file_content_lines[end_line][:end_col]
                 # Ensure consistent newline endings
                 code_lines = (
