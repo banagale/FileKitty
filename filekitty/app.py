@@ -71,6 +71,19 @@ class FileKittyApp(QApplication):
 
 
 # --- Helper Function ---
+def clean_tree_ignore_lines(text: str) -> str:
+    """
+    Cleans a multi-line ignore pattern string.
+    - Each line is treated like a filename pattern (not a regex).
+    - Ignores empty lines and trims whitespace.
+    - Escapes special regex characters for safety.
+    Returns a single string with patterns joined by '|'.
+    """
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    escaped = [re.escape(line) for line in lines]
+    return "|".join(escaped)
+
+
 def generate_project_tree(root: Path | str, ignore_regex: re.Pattern, max_depth: int = 5, expand: bool = True) -> str:
     """
     Return a plain-text folder tree for *root* (≤ *max_depth* levels),
@@ -153,12 +166,10 @@ class TreeDropZone(QPushButton):
         self.setAcceptDrops(True)
 
         self._style_normal = (
-            "padding: 5px 10px; font-size: 12px; border: 1px dashed #666; "
-            "border-radius: 6px; background: #f4f4f4;"
+            "padding: 5px 10px; font-size: 12px; border: 1px dashed #666; border-radius: 6px; background: #f4f4f4;"
         )
         self._style_error = (
-            "padding: 5px 10px; font-size: 12px; border: 1px solid #d33; "
-            "border-radius: 6px; background: #ffecec;"
+            "padding: 5px 10px; font-size: 12px; border: 1px solid #d33; border-radius: 6px; background: #ffecec;"
         )
         self.setStyleSheet(self._style_normal)
 
@@ -300,22 +311,22 @@ class PreferencesDialog(QDialog):
         self.useLlmTimestampCheck = QCheckBox("Use ISO‑8601 timestamp", self)
         self.useLlmTimestampCheck.setChecked(settings.value("useLlmTimestamp", "false") == "true")
         self.useLlmTimestampCheck.setEnabled(self.includeTimestampCheck.isChecked())
-        self.includeTimestampCheck.stateChanged.connect(
-            lambda s: self.useLlmTimestampCheck.setEnabled(s == Qt.Checked)
-        )
+        self.includeTimestampCheck.stateChanged.connect(lambda s: self.useLlmTimestampCheck.setEnabled(s == Qt.Checked))
         form.addRow(self.useLlmTimestampCheck)
 
         # ── tree ignore pattern ---------------------------------------------------
-        self.treeIgnoreEdit = QLineEdit(self)
-        self.treeIgnoreEdit.setText(
-            settings.value(
-                "treeIgnorePattern",
-                "__pycache__|\\.git|\\.DS_Store|\\.idea|\\.ruff_cache|\\.venv|"
-                "\\.pytest_cache|tmp|run_history|artifacts|__init__\\.py|"
-                "\\.pre-commit-config\\.yaml|\\.env|\\.env\\.sample|\\.envrc|CLAUDE\\.md",
-            )
+        self.treeIgnoreEdit = QTextEdit(self)
+        self.treeIgnoreEdit.setPlaceholderText("One file or folder pattern per line (e.g., .git, __pycache__, *.pyc)")
+        existing_pattern = settings.value(
+            "treeIgnorePattern",
+            "__pycache__|\\.git|\\.DS_Store|\\.idea|\\.ruff_cache|\\.venv|"
+            "\\.pytest_cache|tmp|run_history|artifacts|__init__\\.py|"
+            "\\.pre-commit-config\\.yaml|\\.env|\\.env\\.sample|\\.envrc|CLAUDE\\.md",
         )
-        form.addRow(QLabel("Tree ignore regex:"), self.treeIgnoreEdit)
+        # Pre-fill: show as .gitignore-style lines (split by '|')
+        lines = [part.strip().replace("\\", "") for part in existing_pattern.split("|") if part.strip()]
+        self.treeIgnoreEdit.setPlainText("\n".join(lines))
+        form.addRow(QLabel("Tree ignore patterns:"), self.treeIgnoreEdit)
 
         # ── tree depth ------------------------------------------------------------
         self.treeDepthSpin = QSpinBox(self)
@@ -371,7 +382,17 @@ class PreferencesDialog(QDialog):
         settings.setValue(SETTINGS_HISTORY_PATH_KEY, hist_path)
         settings.setValue("includeDateModified", "true" if self.includeTimestampCheck.isChecked() else "false")
         settings.setValue("useLlmTimestamp", "true" if self.useLlmTimestampCheck.isChecked() else "false")
-        settings.setValue("treeIgnorePattern", self.treeIgnoreEdit.text().strip())
+        raw_text = self.treeIgnoreEdit.toPlainText()
+        cleaned_pattern = clean_tree_ignore_lines(raw_text)
+
+        # Validate the regex
+        try:
+            re.compile(cleaned_pattern)
+        except re.error as e:
+            QMessageBox.warning(self, "Invalid pattern", f"Your ignore pattern is invalid:\n\n{e}")
+            return  # Do not save if broken
+
+        settings.setValue("treeIgnorePattern", cleaned_pattern)
         settings.setValue("treeMaxDepth", self.treeDepthSpin.value())
 
         self.history_path_changed = hist_path != self.initial_history_base_path
@@ -1046,7 +1067,7 @@ class FilePicker(QWidget):
             if str_path.startswith(str_home):
                 # Ensure a path separator follows the home dir part before replacing
                 if len(str_path) > len(str_home) and str_path[len(str_home)] in (os.sep, os.altsep):
-                    return "~" + str_path[len(str_home):]
+                    return "~" + str_path[len(str_home) :]
                 elif len(str_path) == len(str_home):  # Exact match to home dir
                     return "~"
             # If not relative to home, return the absolute path
@@ -1339,7 +1360,7 @@ class FilePicker(QWidget):
             # Manage history list: remove future states if branching
             if self.history_index < len(self.history) - 1:
                 # Remove states after the current one
-                states_to_remove = self.history[self.history_index + 1:]
+                states_to_remove = self.history[self.history_index + 1 :]
                 self.history = self.history[: self.history_index + 1]
                 # Delete the corresponding JSON files
                 for old_state in states_to_remove:
@@ -1724,7 +1745,7 @@ class CodeExtractor(ast.NodeVisitor):
             else:
                 # Multi-line segment
                 first_line = self.file_content_lines[start_line][start_col:]
-                middle_lines = self.file_content_lines[start_line + 1: end_line]
+                middle_lines = self.file_content_lines[start_line + 1 : end_line]
                 last_line = self.file_content_lines[end_line][:end_col]
                 # Ensure consistent newline endings
                 code_lines = (
