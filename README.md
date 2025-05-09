@@ -96,6 +96,7 @@ Access via **FileKitty → Preferences** (`Cmd+,`):
 
 - **Default Select Directory** – sets initial folder for file dialog
 - **History Location** – controls where snapshot state is stored
+- **Remember Last Folder for 'Select Files'** - the select files dialog will open to the last folder where a file was selected during this session
 
 ---
 
