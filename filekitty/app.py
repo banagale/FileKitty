@@ -573,6 +573,14 @@ class FilePicker(QWidget):
         btnOpen.clicked.connect(self.openFiles)
         actionButtonLayout.addWidget(btnOpen)
 
+        # --- Append Files Checkbox ---
+        self.appendFilesCheckBox = QCheckBox("Append to List", self)
+        self.appendFilesCheckBox.setToolTip(
+            "When checked, newly selected/dropped files will be added to the existing list instead of replacing it."
+        )
+        self.appendFilesCheckBox.setChecked(False)
+        actionButtonLayout.addWidget(self.appendFilesCheckBox)
+
         self.btnSelectClassesFunctions = QPushButton("🔍 Select Code", self)
         self.btnSelectClassesFunctions.setToolTip("Select specific classes/functions from Python files")
         self.btnSelectClassesFunctions.clicked.connect(self.selectClassesFunctions)
@@ -778,9 +786,15 @@ class FilePicker(QWidget):
             # Process selected files
             self._update_files_and_maybe_create_state(sorted(files))
 
-    def _update_files_and_maybe_create_state(self, files: list[str]):
+    def _update_files_and_maybe_create_state(self, added_files: list[str]):
         """Updates the internal file list and UI, then creates a history state."""
-        self.currentFiles = files
+        if hasattr(self, "appendFilesCheckBox") and self.appendFilesCheckBox.isChecked():
+            current_plus_new = set(self.currentFiles)
+            current_plus_new.update(added_files)  # added_files is already sorted, but set update doesn't care for order
+            self.currentFiles = sorted(list(current_plus_new))
+        else:
+            self.currentFiles = added_files  # added_files is already sorted by callers
+
         # Reset selections when file list changes significantly
         self.selected_items = []
         self.selection_mode = "All Files"
