@@ -51,6 +51,7 @@ HASH_ERROR_SENTINEL = "HASH_ERROR"
 HASH_MISSING_SENTINEL = "FILE_MISSING"
 SETTINGS_DEFAULT_PATH_KEY = "defaultPath"
 SETTINGS_HISTORY_PATH_KEY = "historyPath"
+SETTINGS_REMEMBER_LAST_SELECTED_PATH_KEY = "rememberLastSelectedPath"
 TEXT_CHECK_CHUNK_SIZE = 1024  # Bytes to read for text file check
 
 
@@ -209,6 +210,15 @@ class PreferencesDialog(QDialog):
         self.useLlmTimestampCheck.setEnabled(self.includeTimestampCheck.isChecked())
         formLayout.addRow(self.useLlmTimestampCheck)
 
+        # --- Remember Last Selected Path Checkbox ---
+        self.rememberSelectedPathCheck = QCheckBox("Remember last folder for 'Select Files' (session only)", self)
+        remember_selected_path = settings.value(SETTINGS_REMEMBER_LAST_SELECTED_PATH_KEY, "false")
+        self.rememberSelectedPathCheck.setChecked(remember_selected_path == "true")
+        self.rememberSelectedPathCheck.setToolTip(
+            "If checked, the 'Select Files' dialog will try to open in the last used folder from this session."
+        )
+        formLayout.addRow(self.rememberSelectedPathCheck)
+
         self.includeTimestampCheck.stateChanged.connect(self.updateLlmTimestampEnabled)
 
         mainLayout.addLayout(formLayout)
@@ -262,6 +272,10 @@ class PreferencesDialog(QDialog):
         settings.setValue(SETTINGS_HISTORY_PATH_KEY, history_path)
         settings.setValue("includeDateModified", "true" if self.includeTimestampCheck.isChecked() else "false")
         settings.setValue("useLlmTimestamp", "true" if self.useLlmTimestampCheck.isChecked() else "false")
+        settings.setValue(
+            SETTINGS_REMEMBER_LAST_SELECTED_PATH_KEY, "true" if self.rememberSelectedPathCheck.isChecked() else "false"
+        )
+
         super().accept()
 
 
@@ -469,13 +483,15 @@ class FilePicker(QWidget):
         self.history_index: int = -1  # Current position in history
         self._is_loading_state: bool = False  # Flag to prevent updates during state load
         self._dragged_out_temp_files: list[str] = []  # Track temp files for cleanup
+        self.last_selected_path_session: str | None = None
 
         self._determine_and_setup_history_dir()  # Setup history location
 
-        # --- Load preferences for timestamps ---
+        # --- Load preferences ---
         settings = QSettings("Bastet", "FileKitty")
         self.include_date_modified = settings.value("includeDateModified", "true") == "true"
         self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
+        self.remember_last_selected_path = settings.value(SETTINGS_REMEMBER_LAST_SELECTED_PATH_KEY, "false") == "true"
 
         self.staleCheckTimer = QTimer(self)
         self.staleCheckTimer.timeout.connect(self._poll_stale_status)
@@ -708,6 +724,9 @@ class FilePicker(QWidget):
             settings = QSettings("Bastet", "FileKitty")
             self.include_date_modified = settings.value("includeDateModified", "true") == "true"
             self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
+            self.remember_last_selected_path = (
+                settings.value(SETTINGS_REMEMBER_LAST_SELECTED_PATH_KEY, "false") == "true"
+            )
 
             if dialog.history_path_changed:
                 print("History path setting changed.")
@@ -762,7 +781,14 @@ class FilePicker(QWidget):
         return settings.value(SETTINGS_DEFAULT_PATH_KEY, default_docs or str(Path.home()))
 
     def openFiles(self):
-        default_path = self.get_default_path()
+        # Determine the path to open the dialog at
+        path_to_open_dialog_at = self.get_default_path()  # Start with the persistent default
+
+        if self.remember_last_selected_path:
+            if self.last_selected_path_session and os.path.isdir(self.last_selected_path_session):
+                # Use session path if valid and preference is enabled
+                path_to_open_dialog_at = self.last_selected_path_session
+
         options = QFileDialog.Options()
         # Example filter, can be expanded
         file_filter = (
@@ -773,8 +799,25 @@ class FilePicker(QWidget):
             "Text Files (*.txt *.md);;"
             "Configuration (*.json *.yaml *.yml *.toml *.ini)"
         )
-        files, _ = QFileDialog.getOpenFileNames(self, "Select files", default_path, file_filter, options=options)
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select files",
+            path_to_open_dialog_at,
+            file_filter,
+            options=options,
+        )
         if files:
+            # Update the last selected path for the current session
+            try:
+                first_file_path = Path(files[0])
+                if first_file_path.is_file():  # Ensure it's a file before getting parent
+                    self.last_selected_path_session = str(first_file_path.parent)
+                elif first_file_path.is_dir():  # If a directory itself was somehow selected
+                    self.last_selected_path_session = str(first_file_path)
+            except Exception as e:
+                # Log error or handle, but don't let this crash the app
+                print(f"Could not update last selected session path: {e}")
+
             # Process selected files
             self._update_files_and_maybe_create_state(sorted(files))
 
