@@ -1,5 +1,6 @@
 [tool.poetry]
 name = "filekitty"
+packages = [{ include = "filekitty", from = "src" }]
 version = "0.2.0"
 description = "Select and concatenate file contents, useful for providing context to LLMs and generative AI."
 authors = ["Rob Banagale <rob@banagale.com>"]
@@ -20,6 +21,14 @@ pre-commit = "^4.1.0"
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+
+[[tool.poetry.include]]
+path = "src/filekitty/resources/icon"
+
+
+[tool.poetry.scripts]
+filekitty = "filekitty.app:main"
 
 [tool.ruff]
 line-length = 120
