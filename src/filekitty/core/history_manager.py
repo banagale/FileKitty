@@ -16,8 +16,6 @@ from filekitty.constants import (
     STALE_CHECK_INTERVAL_MS,
 )
 
-# from filekitty.core.utils import is_text_file # is_text_file_func will be passed as an argument where needed
-
 
 class HistoryManager:
     def __init__(self, main_window_ref):

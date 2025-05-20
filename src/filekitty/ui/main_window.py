@@ -3,8 +3,6 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-# Unused standard library imports removed: ast, hashlib, json, os, sys, uuid
-# Keep existing PyQt5 imports and add new ones
 from PyQt5.QtCore import QSettings, QSize, QStandardPaths, Qt, QTimer
 from PyQt5.QtGui import (
     QColor,
@@ -36,12 +34,7 @@ from PyQt5.QtWidgets import (
 
 from filekitty.constants import (
     ICON_PATH,
-    SETTINGS_DEFAULT_PATH_KEY,  # Used by FilePicker via HistoryManager, but PreferencesDialog needs it too
-    # HISTORY_DIR_NAME, # Only used by HistoryManager & PreferencesDialog
-    # STALE_CHECK_INTERVAL_MS, # Only used by HistoryManager
-    # HASH_ERROR_SENTINEL, # Only used by HistoryManager
-    # HASH_MISSING_SENTINEL, # Only used by HistoryManager
-    # TEXT_CHECK_CHUNK_SIZE, # Only used by utils.is_text_file
+    SETTINGS_DEFAULT_PATH_KEY,
 )
 from filekitty.core.history_manager import HistoryManager
 from filekitty.core.python_parser import extract_code_and_imports, parse_python_file
@@ -53,8 +46,6 @@ from filekitty.core.utils import (
 )  # Added sanitize_path, detect_language
 from filekitty.ui.dialogs import PreferencesDialog, SelectClassesFunctionsDialog
 from filekitty.ui.qt_widgets import DragOutButton
-
-# from filekitty.core.utils import is_text_file # Already imported
 
 
 # --- Main Application Window ---
