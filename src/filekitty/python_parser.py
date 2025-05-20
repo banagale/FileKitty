@@ -1,6 +1,8 @@
 import ast
 from pathlib import Path
+
 from .utils import read_file_contents
+
 
 # --- Python Parsing Logic ---
 class SymbolVisitor(ast.NodeVisitor):

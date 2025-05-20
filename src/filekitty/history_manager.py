@@ -1,21 +1,21 @@
-import os
-import sys
-from pathlib import Path
 import hashlib
 import json
+import os
+import sys
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from PyQt5.QtCore import QSettings, QStandardPaths
-from PyQt5.QtWidgets import QMessageBox
 
 from .constants import (
-    SETTINGS_HISTORY_PATH_KEY,
-    HISTORY_DIR_NAME,
     HASH_ERROR_SENTINEL,
     HASH_MISSING_SENTINEL,
+    HISTORY_DIR_NAME,
+    SETTINGS_HISTORY_PATH_KEY,
     STALE_CHECK_INTERVAL_MS,
 )
+
 # from .utils import is_text_file # is_text_file_func will be passed as an argument where needed
 
 
@@ -64,20 +64,19 @@ class HistoryManager:
             print(f"History directory set to: {self.history_dir}")
         except OSError as e:
             self.history_dir = ""  # Disable history
-            if self.main_window_ref: # Check if main_window_ref is set
+            if self.main_window_ref:  # Check if main_window_ref is set
                 self.main_window_ref.show_message_box(
                     "critical", "History Error", f"Could not create history directory:\n{history_path}\n{e}"
                 )
             else:
-                 print(f"CRITICAL: Could not create history directory without main_window_ref: {history_path}\n{e}")
-
+                print(f"CRITICAL: Could not create history directory without main_window_ref: {history_path}\n{e}")
 
     def get_history_dir(self) -> str:
         return self.history_dir
 
     def set_history_dir(self, path: str):
         self.history_dir = path
-        
+
     def get_history_base_path(self) -> str:
         return self.history_base_path
 
@@ -171,29 +170,26 @@ class HistoryManager:
                 self.main_window_ref._update_stale_status_display({})
         except Exception as e:
             if self.main_window_ref:
-                self.main_window_ref.show_message_box(
-                    "critical", "History Error", f"Could not save history state: {e}"
-                )
+                self.main_window_ref.show_message_box("critical", "History Error", f"Could not save history state: {e}")
             else:
                 print(f"CRITICAL: Could not save history state without main_window_ref: {e}")
-
 
     def load_state(self, state_index: int) -> dict | None:
         if not (0 <= state_index < len(self.history)):
             print(f"Invalid state index requested: {state_index} (History size: {len(self.history)})")
             return None
-        
+
         self._is_loading_state = True
         loaded_state_data = None
         try:
             state_to_load = self.history[state_index]
             state_file_name = f"state_{state_to_load['id']}.json"
             state_file_path = os.path.join(self.history_dir, state_file_name)
-            
+
             print(f"Loading state {state_index + 1} from {state_file_path}")
             with open(state_file_path, encoding="utf-8") as f:
                 loaded_state_data = json.load(f)
-            
+
             self.history_index = state_index
         except FileNotFoundError:
             if self.main_window_ref:
@@ -204,7 +200,7 @@ class HistoryManager:
             del self.history[state_index]
             self.history_index = min(self.history_index, len(self.history) - 1)
             if self.main_window_ref:
-                 self.main_window_ref._update_history_ui() # Update UI after removal
+                self.main_window_ref._update_history_ui()  # Update UI after removal
         except json.JSONDecodeError:
             if self.main_window_ref:
                 self.main_window_ref.show_message_box(
@@ -216,12 +212,10 @@ class HistoryManager:
                 self.main_window_ref._update_history_ui()
         except Exception as e:
             if self.main_window_ref:
-                self.main_window_ref.show_message_box(
-                    "critical", "History Error", f"Error loading state: {e}"
-                )
+                self.main_window_ref.show_message_box("critical", "History Error", f"Error loading state: {e}")
         finally:
             self._is_loading_state = False
-        
+
         return loaded_state_data
 
     def check_stale_status(self, state_data: dict, is_text_file_func) -> dict:
@@ -234,8 +228,8 @@ class HistoryManager:
         for file_path in files_to_check:
             if is_text_file_func(file_path):
                 current_hash = self.calculate_file_hash(file_path)
-                stored_hash = stored_hashes.get(file_path) # Use .get for safety
-                if stored_hash is None: # Should not happen if state was saved correctly
+                stored_hash = stored_hashes.get(file_path)  # Use .get for safety
+                if stored_hash is None:  # Should not happen if state was saved correctly
                     print(f"Warning: No stored hash for {file_path} in state.")
                     continue
 
@@ -290,17 +284,17 @@ class HistoryManager:
 
         self.history = []
         self.history_index = -1
-        
+
         # Update history_base_path which _initialize_history_directory will use
-        self.history_base_path = new_base_path 
+        self.history_base_path = new_base_path
         # _initialize_history_directory will read from QSettings if new_base_path is empty
         # or if new_base_path is not a valid directory.
         # It also handles setting self.history_dir
-        self._initialize_history_directory() 
+        self._initialize_history_directory()
 
         self.main_window_ref._update_history_ui()
 
-        if self.history_dir: # Check if a valid directory was set up
+        if self.history_dir:  # Check if a valid directory was set up
             self.main_window_ref.staleCheckTimer.start(self.get_stale_check_interval())
             self.main_window_ref.show_message_box(
                 "information",

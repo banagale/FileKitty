@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
+
 from .constants import TEXT_CHECK_CHUNK_SIZE
+
 
 # --- Helper Function ---
 def is_text_file(file_path: str) -> bool:
@@ -27,6 +29,7 @@ def is_text_file(file_path: str) -> bool:
         # Catch any other unexpected errors during check
         return False
 
+
 def read_file_contents(file_path):
     """Reads file content, trying common encodings."""
     # Prioritize UTF-8, then try others common on different platforms
@@ -44,6 +47,7 @@ def read_file_contents(file_path):
             raise OSError(f"Error reading file {file_path} with {encoding}: {e}") from e
     # If all encodings fail
     raise UnicodeDecodeError(f"Could not decode file {file_path} with tried encodings: {', '.join(encodings_to_try)}.")
+
 
 def sanitize_path(file_path: str) -> str:
     """Attempts to shorten the file path using '~' for the home directory."""
@@ -70,6 +74,7 @@ def sanitize_path(file_path: str) -> str:
         # In case of any error (e.g., resolving issues), return original path
         print(f"Warning: Could not sanitize path '{file_path}': {e}")
         return file_path
+
 
 def detect_language(file_path: str) -> str:
     """Returns a language identifier string based on file extension for Markdown code blocks."""

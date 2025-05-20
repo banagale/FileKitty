@@ -1,32 +1,26 @@
-import atexit # Used for cleanup
-from datetime import datetime # Used in updateTextEdit
-from pathlib import Path # Used for Path objects
+import atexit
+import os
+from datetime import datetime
+from pathlib import Path
 
 # Unused standard library imports removed: ast, hashlib, json, os, sys, uuid
-
 # Keep existing PyQt5 imports and add new ones
-from PyQt5.QtCore import QEvent, QMimeData, QSettings, QSize, QStandardPaths, Qt, QTimer, QUrl
+from PyQt5.QtCore import QSettings, QSize, QStandardPaths, Qt, QTimer
 from PyQt5.QtGui import (
     QColor,
-    QDrag,
     QDragEnterEvent,
     QDropEvent,
     QGuiApplication,
     QIcon,
     QKeySequence,
-    QMouseEvent,
 )
 from PyQt5.QtWidgets import (
     QAction,
-    QApplication, # For QStyle, QKeySequence.Quit
+    QApplication,  # For QStyle, QKeySequence.Quit
     QCheckBox,
-    QComboBox,
-    QDialog, # Base for dialogs
     QFileDialog,
-    QFormLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMenuBar,
@@ -42,19 +36,24 @@ from PyQt5.QtWidgets import (
 
 from .constants import (
     ICON_PATH,
-    SETTINGS_DEFAULT_PATH_KEY,
-    SETTINGS_HISTORY_PATH_KEY, # Used by FilePicker via HistoryManager, but PreferencesDialog needs it too
+    SETTINGS_DEFAULT_PATH_KEY,  # Used by FilePicker via HistoryManager, but PreferencesDialog needs it too
     # HISTORY_DIR_NAME, # Only used by HistoryManager & PreferencesDialog
     # STALE_CHECK_INTERVAL_MS, # Only used by HistoryManager
     # HASH_ERROR_SENTINEL, # Only used by HistoryManager
     # HASH_MISSING_SENTINEL, # Only used by HistoryManager
     # TEXT_CHECK_CHUNK_SIZE, # Only used by utils.is_text_file
 )
-from .utils import is_text_file, read_file_contents, sanitize_path, detect_language # Added sanitize_path, detect_language
-from .qt_widgets import DragOutButton
 from .dialogs import PreferencesDialog, SelectClassesFunctionsDialog
-from .python_parser import parse_python_file, extract_code_and_imports
 from .history_manager import HistoryManager
+from .python_parser import extract_code_and_imports, parse_python_file
+from .qt_widgets import DragOutButton
+from .utils import (
+    detect_language,
+    is_text_file,
+    read_file_contents,
+    sanitize_path,
+)  # Added sanitize_path, detect_language
+
 # from .utils import is_text_file # Already imported
 
 
@@ -80,9 +79,9 @@ class FilePicker(QWidget):
         self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
 
         self.staleCheckTimer = QTimer(self)
-        self.staleCheckTimer.timeout.connect(self._poll_stale_status) # Connection confirmed
+        self.staleCheckTimer.timeout.connect(self._poll_stale_status)  # Connection confirmed
         if self.history_manager.get_history_dir():
-            self.staleCheckTimer.start(self.history_manager.get_stale_check_interval()) # Use manager's interval
+            self.staleCheckTimer.start(self.history_manager.get_stale_check_interval())  # Use manager's interval
 
         self.initUI()
         self.createActions()
@@ -91,7 +90,7 @@ class FilePicker(QWidget):
         self._update_history_ui()  # Initialize history button states etc.
 
         # Register cleanup functions for application exit
-        atexit.register(self.history_manager.cleanup_history_files) # Delegated
+        atexit.register(self.history_manager.cleanup_history_files)  # Delegated
         atexit.register(self._cleanup_drag_out_files)
 
         # --- open any files passed in on launch (Dock / Cmd-Tab) ---
@@ -263,7 +262,7 @@ class FilePicker(QWidget):
 
     def showPreferences(self):
         current_default_path = self.get_default_path()
-        current_history_base_path = self.history_manager.get_history_base_path() # Use HistoryManager's getter
+        current_history_base_path = self.history_manager.get_history_base_path()  # Use HistoryManager's getter
         dialog = PreferencesDialog(current_default_path, current_history_base_path, self)
         if dialog.exec_():
             # Settings are saved within the dialog's accept() method
@@ -289,7 +288,7 @@ class FilePicker(QWidget):
             QMessageBox.warning(self, title, text)
         elif type_str == "information":
             QMessageBox.information(self, title, text)
-        else: # Default to information
+        else:  # Default to information
             QMessageBox.information(self, title, text)
 
     def get_default_path(self):
@@ -326,7 +325,7 @@ class FilePicker(QWidget):
 
         self._update_ui_for_new_files()  # Update the QListWidget
         self.updateTextEdit()  # Update the QTextEdit content
-        self.history_manager.create_new_state( # Delegated
+        self.history_manager.create_new_state(  # Delegated
             self.currentFiles, self.selected_items, self.selection_mode, self.selected_file, is_text_file
         )
 
@@ -341,7 +340,7 @@ class FilePicker(QWidget):
         has_python_text_files = False
 
         for file_path in self.currentFiles:
-            display_text = sanitize_path(file_path) # Use util function
+            display_text = sanitize_path(file_path)  # Use util function
 
             item = QListWidgetItem(display_text)
 
@@ -414,10 +413,9 @@ class FilePicker(QWidget):
             if state_changed:
                 self.selected_items, self.selection_mode, self.selected_file = new_selected_items, new_mode, new_file
                 self.updateTextEdit()  # Regenerate text output
-                self.history_manager.create_new_state( # Delegated
+                self.history_manager.create_new_state(  # Delegated
                     self.currentFiles, self.selected_items, self.selection_mode, self.selected_file, is_text_file
                 )
-
 
     def copyToClipboard(self):
         clipboard = QGuiApplication.clipboard()
@@ -443,7 +441,7 @@ class FilePicker(QWidget):
         try:
             self.updateTextEdit()  # Re-process files
             # Check if content *actually* changed before creating new state? Optional optimization.
-            self.history_manager.create_new_state( # Delegated
+            self.history_manager.create_new_state(  # Delegated
                 self.currentFiles, self.selected_items, self.selection_mode, self.selected_file, is_text_file
             )
         except Exception as e:
@@ -452,7 +450,7 @@ class FilePicker(QWidget):
 
     def updateTextEdit(self):
         """Generates the combined text output based on current files and selections."""
-        if self.history_manager.is_loading_state(): # Use HistoryManager's state
+        if self.history_manager.is_loading_state():  # Use HistoryManager's state
             return
 
         combined_code, files_to_process, parse_errors = "", [], []
@@ -487,7 +485,7 @@ class FilePicker(QWidget):
             if not is_text_file(file_path):
                 continue  # Should not happen due to pre-filtering, but safe
 
-            current_sanitized_path = sanitize_path(file_path) # Use util function
+            current_sanitized_path = sanitize_path(file_path)  # Use util function
             try:
                 # Get date modified string for output (LLM-friendly)
                 stat = Path(file_path).stat()
@@ -549,7 +547,8 @@ class FilePicker(QWidget):
                     file_content = read_file_contents(file_path)
                     lang = detect_language(file_path)  # Use util function
                     combined_code += (
-                        f"# {current_sanitized_path}\n{modified_line_for_output}\n\n```{lang}\n{file_content.strip()}\n```\n\n"
+                        f"# {current_sanitized_path}\n{modified_line_for_output}\n\n```{lang}\n"
+                        f"{file_content.strip()}\n```\n\n"
                     )
 
             except FileNotFoundError:
@@ -646,11 +645,10 @@ class FilePicker(QWidget):
             self.updateTextEdit()
             # UI updates like _update_history_ui and stale status are handled in go_back/go_forward
             # after state is applied.
-        except Exception as e: # Catch any error during state application
+        except Exception as e:  # Catch any error during state application
             print(f"Error applying loaded state data: {e}")
             # Optionally, show a message to the user
             self.show_message_box("warning", "State Load Error", f"Could not fully apply the loaded state: {e}")
-
 
     def go_back(self):
         """Navigates to the previous state in history."""
@@ -660,14 +658,13 @@ class FilePicker(QWidget):
             state_data = self.history_manager.load_state(new_index)
             if state_data:
                 self._apply_loaded_state_data(state_data)
-                self._update_history_ui() # Update UI based on new index
+                self._update_history_ui()  # Update UI based on new index
                 current_stale_check_data = self.history_manager.get_current_state_data()
                 if current_stale_check_data:
                     stale_status = self.history_manager.check_stale_status(current_stale_check_data, is_text_file)
                     self._update_stale_status_display(stale_status)
                 else:
                     self._update_stale_status_display({})
-
 
     def go_forward(self):
         """Navigates to the next state in history."""
@@ -677,14 +674,13 @@ class FilePicker(QWidget):
             state_data = self.history_manager.load_state(new_index)
             if state_data:
                 self._apply_loaded_state_data(state_data)
-                self._update_history_ui() # Update UI based on new index
+                self._update_history_ui()  # Update UI based on new index
                 current_stale_check_data = self.history_manager.get_current_state_data()
                 if current_stale_check_data:
                     stale_status = self.history_manager.check_stale_status(current_stale_check_data, is_text_file)
                     self._update_stale_status_display(stale_status)
                 else:
                     self._update_stale_status_display({})
-
 
     def _update_history_ui(self):
         """Updates history-related UI elements (buttons, status label)."""
@@ -701,11 +697,13 @@ class FilePicker(QWidget):
     def _poll_stale_status(self):
         """Periodically checks if the current history state's files are stale."""
         # history_manager._is_loading_state is an internal detail, use public getter
-        if self.history_manager.is_loading_state() or \
-           not self.history_manager.get_history_dir() or \
-           not self.history_manager.get_history() or \
-           self.history_manager.get_history_index() < 0:
-            if self.staleIndicatorLabel.isVisible(): # Only update if it was visible
+        if (
+            self.history_manager.is_loading_state()
+            or not self.history_manager.get_history_dir()
+            or not self.history_manager.get_history()
+            or self.history_manager.get_history_index() < 0
+        ):
+            if self.staleIndicatorLabel.isVisible():  # Only update if it was visible
                 self._update_stale_status_display({})
             return
 
@@ -714,7 +712,7 @@ class FilePicker(QWidget):
             stale_status = self.history_manager.check_stale_status(current_state_data, is_text_file)
             self._update_stale_status_display(stale_status)
         else:
-            self._update_stale_status_display({}) # Clear display if no current state
+            self._update_stale_status_display({})  # Clear display if no current state
 
     def _update_stale_status_display(self, stale_status: dict):
         """Updates the UI label to indicate file staleness."""
@@ -737,7 +735,7 @@ class FilePicker(QWidget):
         tooltip_lines = ["Files have changed since this history state was captured:"]
         for path in sorted(stale_status.keys()):
             status = stale_status[path]
-            sanitized = sanitize_path(path) # Use util function
+            sanitized = sanitize_path(path)  # Use util function
             tooltip_lines.append(f"- {sanitized} ({status})")
         tooltip = "\n".join(tooltip_lines)
 
@@ -745,7 +743,8 @@ class FilePicker(QWidget):
         self.staleIndicatorLabel.setToolTip(tooltip)
         self.staleIndicatorLabel.show()
 
-    # _cleanup_history_files is now fully in HistoryManager and registered via atexit(self.history_manager.cleanup_history_files)
+    # _cleanup_history_files is now fully in HistoryManager and registered via
+    # atexit(self.history_manager.cleanup_history_files)
 
     def _cleanup_drag_out_files(self):
         """Removes temporary files created by the DragOutButton."""

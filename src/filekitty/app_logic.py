@@ -10,10 +10,10 @@ from .main_window import FilePicker
 class FileKittyApp(QApplication):
     def __init__(self, argv):
         super().__init__(argv)
-        self.main_window = None # Will be set in main()
+        self.main_window = None  # Will be set in main()
 
     def event(self, e):
-        if e.type() == QEvent.FileOpen: # QEvent.FileOpen needs to be imported
+        if e.type() == QEvent.FileOpen:  # QEvent.FileOpen needs to be imported
             file_path = e.file()
             print(f"Received file open event: {file_path}")
             if self.main_window:
@@ -40,7 +40,7 @@ def main():
     file_args = [arg for arg in sys.argv[1:] if Path(arg).is_file()]
 
     picker = FilePicker(initial_files=file_args)
-    app.main_window = picker # Set the main_window attribute
+    app.main_window = picker  # Set the main_window attribute
     picker.show()
     sys.exit(app.exec_())
 
