@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtWidgets import QApplication
 
-from .main_window import FilePicker
+from filekitty.ui.main_window import FilePicker
 
 
 class FileKittyApp(QApplication):

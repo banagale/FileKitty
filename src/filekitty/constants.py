@@ -1,4 +1,6 @@
-ICON_PATH = "assets/icon/FileKitty-icon.png"
+from pathlib import Path
+
+ICON_PATH = str((Path(__file__).parent / "resources/icon/FileKitty-icon.png").resolve())
 HISTORY_DIR_NAME = "FileKittyHistory"
 STALE_CHECK_INTERVAL_MS = 2500  # Check every 2.5 seconds
 HASH_ERROR_SENTINEL = "HASH_ERROR"

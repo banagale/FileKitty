@@ -20,9 +20,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 
-from .constants import HISTORY_DIR_NAME, SETTINGS_DEFAULT_PATH_KEY, SETTINGS_HISTORY_PATH_KEY
-from .python_parser import parse_python_file
-from .utils import is_text_file
+from filekitty.constants import HISTORY_DIR_NAME, SETTINGS_DEFAULT_PATH_KEY, SETTINGS_HISTORY_PATH_KEY
+from filekitty.core.python_parser import parse_python_file
+from filekitty.core.utils import is_text_file
 
 
 # --- Dialogs ---

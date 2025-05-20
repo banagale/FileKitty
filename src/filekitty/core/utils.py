@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from .constants import TEXT_CHECK_CHUNK_SIZE
+from filekitty.constants import TEXT_CHECK_CHUNK_SIZE
 
 
 # --- Helper Function ---

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PyQt5.QtCore import QSettings, QStandardPaths
 
-from .constants import (
+from filekitty.constants import (
     HASH_ERROR_SENTINEL,
     HASH_MISSING_SENTINEL,
     HISTORY_DIR_NAME,
@@ -16,7 +16,7 @@ from .constants import (
     STALE_CHECK_INTERVAL_MS,
 )
 
-# from .utils import is_text_file # is_text_file_func will be passed as an argument where needed
+# from filekitty.core.utils import is_text_file # is_text_file_func will be passed as an argument where needed
 
 
 class HistoryManager:

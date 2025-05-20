@@ -34,7 +34,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .constants import (
+from filekitty.constants import (
     ICON_PATH,
     SETTINGS_DEFAULT_PATH_KEY,  # Used by FilePicker via HistoryManager, but PreferencesDialog needs it too
     # HISTORY_DIR_NAME, # Only used by HistoryManager & PreferencesDialog
@@ -43,18 +43,18 @@ from .constants import (
     # HASH_MISSING_SENTINEL, # Only used by HistoryManager
     # TEXT_CHECK_CHUNK_SIZE, # Only used by utils.is_text_file
 )
-from .dialogs import PreferencesDialog, SelectClassesFunctionsDialog
-from .history_manager import HistoryManager
-from .python_parser import extract_code_and_imports, parse_python_file
-from .qt_widgets import DragOutButton
-from .utils import (
+from filekitty.core.history_manager import HistoryManager
+from filekitty.core.python_parser import extract_code_and_imports, parse_python_file
+from filekitty.core.utils import (
     detect_language,
     is_text_file,
     read_file_contents,
     sanitize_path,
 )  # Added sanitize_path, detect_language
+from filekitty.ui.dialogs import PreferencesDialog, SelectClassesFunctionsDialog
+from filekitty.ui.qt_widgets import DragOutButton
 
-# from .utils import is_text_file # Already imported
+# from filekitty.core.utils import is_text_file # Already imported
 
 
 # --- Main Application Window ---
