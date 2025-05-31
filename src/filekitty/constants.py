@@ -18,11 +18,17 @@ SETTINGS_TREE_BASE_KEY = "treeBaseDir"
 SETTINGS_TREE_IGNORE_KEY = "treeIgnoreRegex"
 SETTINGS_TREE_DEF_BASE_KEY = "treeDefaultBaseDir"
 SETTINGS_TREE_DEF_IGNORE_KEY = "treeDefaultIgnoreList"
+SETTINGS_FILE_IGNORE_KEY = "mainOutputIgnoreRegex"
 
-# ------------ tree defaults ------------ #
-TREE_IGNORE_DEFAULT = (
-    "__pycache__|.git|.DS_Store|.idea|.ruff_cache|.venv|.pytest_cache|tmp|run_history|"
-    "artifacts|__init__.py|.pre-commit-config.yaml|.env|.env.sample|.envrc|CLAUDE.md"
+# ------------ ignore defaults ------------ #
+FILE_IGNORE_DEFAULT = (
+    "__pycache__|.git|.DS_Store|.idea|.venv|.pytest_cache|tmp|"
+    "run_history|artifacts|__init__.py|.pre-commit-config.yaml|"
+    ".env|.env.sample|.envrc|CLAUDE.md"
 )
+
+# Tree view uses same default unless user overrides
+TREE_IGNORE_DEFAULT = FILE_IGNORE_DEFAULT
+
 
 TEXT_CHECK_CHUNK_SIZE = 1024

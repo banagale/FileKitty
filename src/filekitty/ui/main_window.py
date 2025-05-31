@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -31,7 +32,9 @@ from PyQt5.QtWidgets import (
 )
 
 from filekitty.constants import (
+    FILE_IGNORE_DEFAULT,
     SETTINGS_DEFAULT_PATH_KEY,
+    SETTINGS_FILE_IGNORE_KEY,
     SETTINGS_TREE_BASE_KEY,
     SETTINGS_TREE_DEF_BASE_KEY,
     SETTINGS_TREE_DEF_IGNORE_KEY,
@@ -79,6 +82,16 @@ class FilePicker(QWidget):
 
         # ---- prefs ----
         stg = QSettings("Bastet", "FileKitty")
+
+        ignore_raw = stg.value(SETTINGS_FILE_IGNORE_KEY, FILE_IGNORE_DEFAULT)
+        ignore_text = str(ignore_raw).strip() if ignore_raw is not None else FILE_IGNORE_DEFAULT
+
+        try:
+            self.output_ignore_regex = re.compile(ignore_text)
+        except re.error:
+            print(f"Invalid main output ignore regex: {ignore_text!r}")
+            self.output_ignore_regex = re.compile("$^")  # match nothing
+
         self.include_tree = stg.value(SETTINGS_TREE_ENABLED_KEY, "true") == "true"
         # per-window overrides first
         self.tree_base_dir = stg.value(SETTINGS_TREE_BASE_KEY, "")
@@ -239,8 +252,8 @@ class FilePicker(QWidget):
         self.treeCheck.stateChanged.connect(self._toggle_tree_enabled)
         treeRow.addWidget(self.treeCheck)
 
-        treeGear = QPushButton("🛠", self)
-        treeGear.setFixedWidth(40)
+        treeGear = QPushButton("🛠Override Default File Tree Settings", self)
+        treeGear.setFixedWidth(260)
         treeGear.setStyleSheet("padding: 6px 8px 6px 8px;")
         treeGear.setToolTip("Configure tree base & ignore list")
         treeGear.clicked.connect(self._open_tree_settings)
@@ -412,12 +425,14 @@ class FilePicker(QWidget):
             "Configuration (*.json *.yaml *.yml *.toml *.ini)"
         )
         files, _ = QFileDialog.getOpenFileNames(self, "Select files", default_path, file_filter, options=options)
+        files = [f for f in files if not self._is_output_ignored(f)]
         if files:
             # Process selected files
             self._update_files_and_maybe_create_state(sorted(files))
 
     def _update_files_and_maybe_create_state(self, files: list[str]):
         """Updates the internal file list and UI, then creates a history state."""
+        files = [f for f in files if not self._is_output_ignored(f)]
         self.currentFiles = files
         self.current_tree_snapshot = None
         # Reset selections when file list changes significantly
@@ -440,6 +455,15 @@ class FilePicker(QWidget):
         if getattr(self, "auto_copy", False):
             self.copyToClipboard()
 
+    def _is_output_ignored(self, path: str) -> bool:
+        """Return True if path matches the user’s output-ignore regex."""
+        try:
+            return bool(self.output_ignore_regex.search(path))
+        except re.error:
+            # malformed regex → ignore nothing but warn once
+            print("Warning: invalid mainOutputIgnoreRegex")
+            return False
+
     def _update_ui_for_new_files(self):
         """Populates the file list widget based on self.currentFiles."""
         self.fileList.clear()
@@ -456,6 +480,9 @@ class FilePicker(QWidget):
                 # Grey out and disable non-text files slightly differently
                 item.setForeground(QColor(Qt.gray))
                 item.setToolTip("Binary or non-standard text file, content not shown.")
+            if self._is_output_ignored(file_path):
+                item.setForeground(QColor(Qt.gray))
+                item.setToolTip("File ignored based on Output Ignore List.")
             elif file_path.endswith(".py"):
                 has_python_text_files = True
 
@@ -702,7 +729,10 @@ class FilePicker(QWidget):
                                     file_path = os.path.join(root, filename)
                                     # Double check it's a file and not a broken symlink etc.
                                     if Path(file_path).is_file():
+                                        if self._is_output_ignored(file_path):
+                                            continue
                                         files_to_add.append(file_path)
+
                         except OSError as e:
                             print(f"Error walking directory {local_path}: {e}")
                             QMessageBox.warning(

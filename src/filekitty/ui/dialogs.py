@@ -24,7 +24,9 @@ from PyQt5.QtWidgets import (
 )
 
 from filekitty.constants import (
+    FILE_IGNORE_DEFAULT,
     SETTINGS_DEFAULT_PATH_KEY,
+    SETTINGS_FILE_IGNORE_KEY,
     SETTINGS_HISTORY_PATH_KEY,
     SETTINGS_TREE_DEF_BASE_KEY,
     SETTINGS_TREE_DEF_IGNORE_KEY,
@@ -36,12 +38,18 @@ from filekitty.core.utils import is_text_file
 
 # --- Dialogs ---
 class PreferencesDialog(QDialog):
+    """
+    Preferences window with three tabs:
+      • General   – paths, history, timestamps
+      • Output    – ignore list that filters which files are concatenated
+      • Project Tree – global defaults for tree view
+    """
+
     def __init__(self, current_default_path, current_history_base_path, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
-        self.setMinimumWidth(600)
+        self.setMinimumWidth(620)
 
-        # remember initial values
         self.initial_default_path = current_default_path
         self.initial_history_base_path = current_history_base_path
         self.history_path_changed = False
@@ -49,109 +57,131 @@ class PreferencesDialog(QDialog):
         self._build_ui()
         self._load_settings()
 
-    # ---------- UI ---------- #
+    # ───────────────── UI ───────────────── #
     def _build_ui(self):
         self.tabs = QTabWidget(self)
         self._build_general_tab()
+        self._build_output_tab()
         self._build_tree_tab()
 
         # buttons
         btnRow = QHBoxLayout()
-        btnSave, btnCancel = QPushButton("Save"), QPushButton("Cancel")
+        save, cancel = QPushButton("Save"), QPushButton("Cancel")
         btnRow.addStretch()
-        btnRow.addWidget(btnSave)
-        btnRow.addWidget(btnCancel)
-        btnSave.clicked.connect(self.accept)
-        btnCancel.clicked.connect(self.reject)
+        btnRow.addWidget(save)
+        btnRow.addWidget(cancel)
+        save.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
 
-        outer = QVBoxLayout(self)
-        outer.addWidget(self.tabs)
-        outer.addLayout(btnRow)
-        self.setLayout(outer)
+        root = QVBoxLayout(self)
+        root.addWidget(self.tabs)
+        root.addLayout(btnRow)
+        self.setLayout(root)
 
+    # ---------- 1 General ---------- #
     def _build_general_tab(self):
-        general = QWidget()
-        form = QFormLayout(general)
+        tab = QWidget()
+        form = QFormLayout(tab)
 
-        # Default open-dialog path
+        # default open-dialog directory
         self.defaultPathEdit = QLineEdit()
-        browseDefault = QPushButton("Browse…")
-        browseDefault.clicked.connect(self._browse_default_dir)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse_path_default)
         row = QHBoxLayout()
         row.addWidget(self.defaultPathEdit, 1)
-        row.addWidget(browseDefault)
+        row.addWidget(browse)
         form.addRow("Default ‘Select Files’ Directory:", row)
 
-        # History path
+        # history base dir
         self.historyPathEdit = QLineEdit()
-        browseHist = QPushButton("Browse…")
-        browseHist.clicked.connect(self._browse_history_dir)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse_path_history)
         row = QHBoxLayout()
         row.addWidget(self.historyPathEdit, 1)
-        row.addWidget(browseHist)
+        row.addWidget(browse)
         form.addRow("History Storage Directory:", row)
 
-        # timestamp prefs
-        self.includeTimestampCheck = QCheckBox("Add Date Modified to Output by Default")
-        self.useLlmTimestampCheck = QCheckBox("Use ISO-8601 Timestamp")
-        self.includeTimestampCheck.stateChanged.connect(lambda s: self.useLlmTimestampCheck.setEnabled(s == Qt.Checked))
+        # timestamps
+        self.includeTimestampCheck = QCheckBox("Add Date-Modified column by default")
+        self.useIsoCheck = QCheckBox("Use ISO-8601 format")
+        self.includeTimestampCheck.stateChanged.connect(lambda s: self.useIsoCheck.setEnabled(s == Qt.Checked))
         form.addRow(self.includeTimestampCheck)
-        form.addRow(self.useLlmTimestampCheck)
+        form.addRow(self.useIsoCheck)
 
-        self.tabs.addTab(general, "General")
+        self.tabs.addTab(tab, "General")
 
+    # ---------- 2 Project-Tree ---------- #
     def _build_tree_tab(self):
-        tree = QWidget()
-        form = QFormLayout(tree)
+        tab = QWidget()
+        form = QFormLayout(tab)
 
-        # default base dir
         self.treeBaseEdit = QLineEdit()
-        browseBase = QPushButton("Browse…")
-        browseBase.clicked.connect(self._browse_tree_base)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse_path_tree_base)
         row = QHBoxLayout()
         row.addWidget(self.treeBaseEdit, 1)
-        row.addWidget(browseBase)
+        row.addWidget(browse)
         form.addRow("Default Tree Base Directory:", row)
 
-        # default ignore list (multiline, like .gitignore)
         self.treeIgnoreEdit = QTextEdit()
-        self.treeIgnoreEdit.setPlaceholderText("One pattern per line, or leave blank for built-in defaults.")
         self.treeIgnoreEdit.setMinimumHeight(80)
+        self.treeIgnoreEdit.setPlaceholderText("One pattern per line, or leave blank for built-in defaults.")
         form.addRow("Default Tree Ignore List:", self.treeIgnoreEdit)
 
-        note = QLabel("These defaults are used whenever the per-window Tree Settings dialog is blank.")
+        note = QLabel("Used when the window-specific Tree Settings dialog is blank.")
         note.setWordWrap(True)
         form.addRow(note)
 
-        self.tabs.addTab(tree, "Project Tree")
+        self.tabs.addTab(tab, "Project Tree")
+
+    # ---------- 3 Output ---------- #
+    def _build_output_tab(self):
+        tab = QWidget()
+        form = QFormLayout(tab)
+
+        self.fileIgnoreEdit = QTextEdit()
+        self.fileIgnoreEdit.setMinimumHeight(80)
+        self.fileIgnoreEdit.setPlaceholderText(
+            "Regex or |-delimited list of patterns to exclude from concatenated output."
+        )
+        form.addRow("Main-Output Ignore List:", self.fileIgnoreEdit)
+
+        note = QLabel(
+            "These patterns are checked *in addition to* the text/binary test. Leave blank for built-in defaults."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+
+        self.tabs.addTab(tab, "Output")
 
     # ---------- browse helpers ---------- #
-    def _browse_default_dir(self):
-        path = QFileDialog.getExistingDirectory(self, "Select Default Directory", self.defaultPathEdit.text())
-        if path:
-            self.defaultPathEdit.setText(path)
+    def _browse_path_default(self):
+        p = QFileDialog.getExistingDirectory(self, "Select Directory", self.defaultPathEdit.text())
+        if p:
+            self.defaultPathEdit.setText(p)
 
-    def _browse_history_dir(self):
-        path = QFileDialog.getExistingDirectory(self, "Select History Storage Directory", self.historyPathEdit.text())
-        if path:
-            self.historyPathEdit.setText(path)
+    def _browse_path_history(self):
+        p = QFileDialog.getExistingDirectory(self, "Select Directory", self.historyPathEdit.text())
+        if p:
+            self.historyPathEdit.setText(p)
 
-    def _browse_tree_base(self):
-        path = QFileDialog.getExistingDirectory(self, "Select Default Tree Base Directory", self.treeBaseEdit.text())
-        if path:
-            self.treeBaseEdit.setText(path)
+    def _browse_path_tree_base(self):
+        p = QFileDialog.getExistingDirectory(self, "Select Directory", self.treeBaseEdit.text())
+        if p:
+            self.treeBaseEdit.setText(p)
 
-    # ---------- settings load/save ---------- #
+    # ---------- settings ---------- #
     def _load_settings(self):
         s = QSettings("Bastet", "FileKitty")
         self.defaultPathEdit.setText(s.value(SETTINGS_DEFAULT_PATH_KEY, ""))
         self.historyPathEdit.setText(s.value(SETTINGS_HISTORY_PATH_KEY, ""))
         self.includeTimestampCheck.setChecked(s.value("includeDateModified", "true") == "true")
-        self.useLlmTimestampCheck.setChecked(s.value("useLlmTimestamp", "false") == "true")
-        self.useLlmTimestampCheck.setEnabled(self.includeTimestampCheck.isChecked())
+        self.useIsoCheck.setChecked(s.value("useLlmTimestamp", "false") == "true")
+        self.useIsoCheck.setEnabled(self.includeTimestampCheck.isChecked())
 
         self.treeBaseEdit.setText(s.value(SETTINGS_TREE_DEF_BASE_KEY, ""))
         self.treeIgnoreEdit.setPlainText(s.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT))
+        self.fileIgnoreEdit.setPlainText(s.value(SETTINGS_FILE_IGNORE_KEY, FILE_IGNORE_DEFAULT))
 
     def accept(self):
         # validate history dir
@@ -165,10 +195,12 @@ class PreferencesDialog(QDialog):
         s.setValue(SETTINGS_DEFAULT_PATH_KEY, self.defaultPathEdit.text().strip())
         s.setValue(SETTINGS_HISTORY_PATH_KEY, hist)
         s.setValue("includeDateModified", "true" if self.includeTimestampCheck.isChecked() else "false")
-        s.setValue("useLlmTimestamp", "true" if self.useLlmTimestampCheck.isChecked() else "false")
+        s.setValue("useLlmTimestamp", "true" if self.useIsoCheck.isChecked() else "false")
 
         s.setValue(SETTINGS_TREE_DEF_BASE_KEY, self.treeBaseEdit.text().strip())
         s.setValue(SETTINGS_TREE_DEF_IGNORE_KEY, self.treeIgnoreEdit.toPlainText().strip())
+
+        s.setValue(SETTINGS_FILE_IGNORE_KEY, self.fileIgnoreEdit.toPlainText().strip())
 
         super().accept()
 
@@ -221,6 +253,8 @@ class SelectClassesFunctionsDialog(QDialog):
             file_name = Path(self.parent.selected_file).name
             if self.file_combo.findText(file_name) != -1:
                 self.file_combo.setCurrentText(file_name)
+
+        # --- Ignore Regex for File Output ---
 
     def update_file_selection(self, mode):
         self.file_combo.setVisible(mode == "Single File")
