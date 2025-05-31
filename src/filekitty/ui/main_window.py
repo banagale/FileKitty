@@ -128,6 +128,7 @@ class FilePicker(QWidget):
         if dlg.exec_():  # user pressed OK
             stg = QSettings("Bastet", "FileKitty")
             self.tree_base_dir = stg.value(SETTINGS_TREE_BASE_KEY, "")
+            self._update_tree_base_label()
             self.tree_ignore_regex = stg.value(SETTINGS_TREE_IGNORE_KEY, TREE_IGNORE_DEFAULT)
             if self.currentFiles:
                 self.refreshText()
@@ -146,6 +147,19 @@ class FilePicker(QWidget):
         except Exception as e:
             print(f"Tree generation failed: {e}")
             return None
+
+    def _update_tree_base_label(self):
+        """Update label to reflect locked base directory."""
+        base = self.tree_base_dir.strip()
+        if base:
+            home = str(Path.home())
+            if base.startswith(home):
+                base = base.replace(home, "~")
+            max_len = 40
+            truncated = base if len(base) <= max_len else f"...{base[-(max_len - 3) :]}"
+            self.treeBaseLabel.setText(f"Locked to {truncated}")
+        else:
+            self.treeBaseLabel.setText("")
 
     def initUI(self):
         self.mainLayout = QVBoxLayout(self)
@@ -214,6 +228,10 @@ class FilePicker(QWidget):
         treeGear.clicked.connect(self._open_tree_settings)
         treeRow.addWidget(treeGear)
 
+        self.treeBaseLabel = QLabel("", self)
+        self.treeBaseLabel.setStyleSheet("color: gray; font-style: italic;")
+        treeRow.addWidget(self.treeBaseLabel)
+
         treeRow.addStretch()
         self.mainLayout.addLayout(treeRow)
 
@@ -224,6 +242,7 @@ class FilePicker(QWidget):
         )
         # Load from QSettings
         settings = QSettings("Bastet", "FileKitty")
+        self._update_tree_base_label()
         auto_copy_value = settings.value("autoCopyOnImport")
         if auto_copy_value is None:
             self.auto_copy = True
@@ -550,12 +569,17 @@ class FilePicker(QWidget):
         else:
             files_to_process = [f for f in self.currentFiles if is_text_file(f)]
 
-        if not files_to_process and self.currentFiles:
-            self.textEdit.setPlainText("# No text files selected or available to display content.")
+        if not self.currentFiles:
+            # No files dropped → maybe tree is still useful
+            parts = [tree_md] if tree_md else []
+            self.textEdit.setPlainText("\n\n".join(parts))
             self.updateLineCountAndActionButtons()
             return
-        elif not self.currentFiles:
-            self.textEdit.setPlainText("")
+
+        if not files_to_process:
+            # Files dropped, but none were text — show tree + warning
+            parts = [tree_md, "# No text files selected or available to display content."]
+            self.textEdit.setPlainText("\n\n".join([p for p in parts if p]))
             self.updateLineCountAndActionButtons()
             return
 
