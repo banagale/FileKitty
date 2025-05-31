@@ -1,4 +1,3 @@
-
 from PyQt5.QtCore import QSettings
 from PyQt5.QtWidgets import (
     QDialog,
@@ -40,7 +39,7 @@ class TreeSettingsDialog(QDialog):
         base_row = QHBoxLayout()
         base_row.addWidget(self.base_edit, 1)
         base_row.addWidget(browse_btn)
-        form.addRow(QLabel("Tree Base Directory:"), base_row)
+        form.addRow(QLabel("Lock Tree Base Directory:"), base_row)
 
         # Ignore regex
         self.ignore_edit = QLineEdit(self)
