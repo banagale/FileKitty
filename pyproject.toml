@@ -11,7 +11,7 @@ readme = "README.md"
 python = "^3.12"
 pyqt5 = "^5.15.10"
 setuptools = "==70.3.0" # Keep specific version if needed for py2app compatibility
-
+rich = "^13"
 
 [tool.poetry.group.dev.dependencies]
 py2app = "^0.28.7"
