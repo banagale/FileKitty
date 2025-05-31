@@ -33,6 +33,8 @@ from PyQt5.QtWidgets import (
 from filekitty.constants import (
     SETTINGS_DEFAULT_PATH_KEY,
     SETTINGS_TREE_BASE_KEY,
+    SETTINGS_TREE_DEF_BASE_KEY,
+    SETTINGS_TREE_DEF_IGNORE_KEY,
     SETTINGS_TREE_ENABLED_KEY,
     SETTINGS_TREE_IGNORE_KEY,
     TREE_IGNORE_DEFAULT,
@@ -78,8 +80,15 @@ class FilePicker(QWidget):
         # ---- prefs ----
         stg = QSettings("Bastet", "FileKitty")
         self.include_tree = stg.value(SETTINGS_TREE_ENABLED_KEY, "true") == "true"
+        # per-window overrides first
         self.tree_base_dir = stg.value(SETTINGS_TREE_BASE_KEY, "")
-        self.tree_ignore_regex = stg.value(SETTINGS_TREE_IGNORE_KEY, TREE_IGNORE_DEFAULT)
+        self.tree_ignore_regex = stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip()
+
+        # global defaults
+        self.tree_def_base = stg.value(SETTINGS_TREE_DEF_BASE_KEY, "").strip()
+        self.tree_def_ignore = stg.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+        if not self.tree_ignore_regex:
+            self.tree_ignore_regex = self.tree_def_ignore
 
         self.include_date_modified = stg.value("includeDateModified", "true") == "true"
         self.use_llm_timestamp = stg.value("useLlmTimestamp", "false") == "true"
@@ -129,7 +138,7 @@ class FilePicker(QWidget):
             stg = QSettings("Bastet", "FileKitty")
             self.tree_base_dir = stg.value(SETTINGS_TREE_BASE_KEY, "")
             self._update_tree_base_label()
-            self.tree_ignore_regex = stg.value(SETTINGS_TREE_IGNORE_KEY, TREE_IGNORE_DEFAULT)
+            self.tree_ignore_regex = stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip() or self.tree_def_ignore
             if self.currentFiles:
                 self.refreshText()
 
@@ -137,11 +146,20 @@ class FilePicker(QWidget):
         """Return a fresh tree snapshot or None if disabled/unavailable."""
         if not self.include_tree:
             return None
-        base = self.tree_base_dir or (os.path.commonpath(self.currentFiles) if self.currentFiles else "")
+
+        # base dir precedence:   locked override → global default → commonpath
+        base = (
+            self.tree_base_dir.strip()
+            or self.tree_def_base
+            or (os.path.commonpath(self.currentFiles) if self.currentFiles else "")
+        )
+
+        ignore_regex = self.tree_ignore_regex.strip() or self.tree_def_ignore
         if not base:
             return None
         try:
-            md_text, snap = self._generate_tree(base, self.tree_ignore_regex)
+            md_text, snap = self._generate_tree(base, ignore_regex)
+
             self.current_tree_snapshot = snap
             return snap
         except Exception as e:

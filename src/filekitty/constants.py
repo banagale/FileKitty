@@ -16,6 +16,8 @@ SETTINGS_HISTORY_PATH_KEY = "historyPath"
 SETTINGS_TREE_ENABLED_KEY = "treeEnabled"
 SETTINGS_TREE_BASE_KEY = "treeBaseDir"
 SETTINGS_TREE_IGNORE_KEY = "treeIgnoreRegex"
+SETTINGS_TREE_DEF_BASE_KEY = "treeDefaultBaseDir"
+SETTINGS_TREE_DEF_IGNORE_KEY = "treeDefaultIgnoreList"
 
 # ------------ tree defaults ------------ #
 TREE_IGNORE_DEFAULT = (

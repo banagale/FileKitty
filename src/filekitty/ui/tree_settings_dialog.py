@@ -7,73 +7,90 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QTextEdit,
     QVBoxLayout,
 )
 
 from filekitty.constants import (
     SETTINGS_TREE_BASE_KEY,
+    SETTINGS_TREE_DEF_IGNORE_KEY,
     SETTINGS_TREE_IGNORE_KEY,
     TREE_IGNORE_DEFAULT,
 )
 
 
 class TreeSettingsDialog(QDialog):
-    """Modal opened by the gear next to “Include File Tree.”"""
+    """Per-window tree settings. Blank fields mean ‘use global default’."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("File Tree Settings")
         self.setMinimumWidth(500)
-        self._init_ui()
-        self._load_settings()
+        self._build_ui()
+        self._load()
 
     # ---------- UI ---------- #
-    def _init_ui(self):
+    def _build_ui(self):
         layout = QVBoxLayout(self)
         form = QFormLayout()
-
-        # Base directory
-        self.base_edit = QLineEdit(self)
-        browse_btn = QPushButton("Browse…", self)
-        browse_btn.clicked.connect(self._browse_dir)
-        base_row = QHBoxLayout()
-        base_row.addWidget(self.base_edit, 1)
-        base_row.addWidget(browse_btn)
-        form.addRow(QLabel("Lock Tree Base Directory:"), base_row)
-
-        # Ignore regex
-        self.ignore_edit = QLineEdit(self)
-        form.addRow(QLabel("Ignore Regex:"), self.ignore_edit)
-
         layout.addLayout(form)
 
-        note = QLabel("Defaults can be changed in Preferences → Tree tab.", self)
+        # base dir
+        self.base_edit = QLineEdit()
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse)
+        row = QHBoxLayout()
+        row.addWidget(self.base_edit, 1)
+        row.addWidget(browse)
+        form.addRow("Lock Tree Base Directory:", row)
+
+        # ignore list
+        self.ignore_edit = QTextEdit()
+        self.ignore_edit.setMinimumHeight(60)
+        form.addRow("Ignore List / Regex:", self.ignore_edit)
+
+        # divergence label
+        self.divergeLabel = QLabel("foo")  # Initialize with space so it has height
+        self.divergeLabel.setWordWrap(True)  # Allow wrapping for long messages
+        self.divergeLabel.setMinimumHeight(24)  # Prevent collapse to 0
+        self.divergeLabel.setText("Tree ignore list differs from Preferences.")
+        layout.addWidget(self.divergeLabel)
+
+        note = QLabel("Leave fields blank to inherit defaults from Preferences.", self)
         note.setWordWrap(True)
         layout.addWidget(note)
 
-        btn_row = QHBoxLayout()
-        ok_btn = QPushButton("OK", self)
-        cancel_btn = QPushButton("Cancel", self)
-        ok_btn.clicked.connect(self.accept)
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addStretch()
-        btn_row.addWidget(ok_btn)
-        btn_row.addWidget(cancel_btn)
-        layout.addLayout(btn_row)
+        # buttons
+        btnRow = QHBoxLayout()
+        ok, cancel = QPushButton("OK"), QPushButton("Cancel")
+        btnRow.addStretch()
+        btnRow.addWidget(ok)
+        btnRow.addWidget(cancel)
+        ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+        layout.addLayout(btnRow)
 
     # ---------- helpers ---------- #
-    def _browse_dir(self):
-        path = QFileDialog.getExistingDirectory(self, "Select Base Directory")
-        if path:
-            self.base_edit.setText(path)
+    def _browse(self):
+        p = QFileDialog.getExistingDirectory(self, "Select Tree Base Directory")
+        if p:
+            self.base_edit.setText(p)
 
-    def _load_settings(self):
-        stg = QSettings("Bastet", "FileKitty")
-        self.base_edit.setText(stg.value(SETTINGS_TREE_BASE_KEY, ""))
-        self.ignore_edit.setText(stg.value(SETTINGS_TREE_IGNORE_KEY, TREE_IGNORE_DEFAULT))
+    def _load(self):
+        s = QSettings("Bastet", "FileKitty")
+        self.base_edit.setText(s.value(SETTINGS_TREE_BASE_KEY, ""))
+        self.ignore_edit.setPlainText(s.value(SETTINGS_TREE_IGNORE_KEY, ""))
+
+        # show divergence notice
+        default_ignore = s.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+        current_ignore = self.ignore_edit.toPlainText().strip() or default_ignore
+        if current_ignore != default_ignore:
+            self.divergeLabel.setText("Ignores differ from global default.")
+        else:
+            self.divergeLabel.setText("")
 
     def accept(self):
-        stg = QSettings("Bastet", "FileKitty")
-        stg.setValue(SETTINGS_TREE_BASE_KEY, self.base_edit.text().strip())
-        stg.setValue(SETTINGS_TREE_IGNORE_KEY, self.ignore_edit.text().strip())
+        s = QSettings("Bastet", "FileKitty")
+        s.setValue(SETTINGS_TREE_BASE_KEY, self.base_edit.text().strip())
+        s.setValue(SETTINGS_TREE_IGNORE_KEY, self.ignore_edit.toPlainText().strip())
         super().accept()

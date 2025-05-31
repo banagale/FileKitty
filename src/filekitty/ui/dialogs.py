@@ -17,10 +17,19 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QTabWidget,
+    QTextEdit,
     QVBoxLayout,
+    QWidget,
 )
 
-from filekitty.constants import HISTORY_DIR_NAME, SETTINGS_DEFAULT_PATH_KEY, SETTINGS_HISTORY_PATH_KEY
+from filekitty.constants import (
+    SETTINGS_DEFAULT_PATH_KEY,
+    SETTINGS_HISTORY_PATH_KEY,
+    SETTINGS_TREE_DEF_BASE_KEY,
+    SETTINGS_TREE_DEF_IGNORE_KEY,
+    TREE_IGNORE_DEFAULT,
+)
 from filekitty.core.python_parser import parse_python_file
 from filekitty.core.utils import is_text_file
 
@@ -30,105 +39,137 @@ class PreferencesDialog(QDialog):
     def __init__(self, current_default_path, current_history_base_path, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(600)
+
+        # remember initial values
         self.initial_default_path = current_default_path
         self.initial_history_base_path = current_history_base_path
-        self.initUI()
-        self.defaultPathEdit.setText(current_default_path)
-        self.historyPathEdit.setText(current_history_base_path)
-        self.history_path_changed = False  # Flag to track if history path changed
+        self.history_path_changed = False
 
-    def initUI(self):
-        mainLayout = QVBoxLayout(self)
-        formLayout = QFormLayout()
+        self._build_ui()
+        self._load_settings()
 
-        self.defaultPathEdit = QLineEdit(self)
-        self.defaultPathEdit.setPlaceholderText("Leave blank to use system default (e.g., Documents)")
-        self.defaultPathEdit.setToolTip("The starting directory for the 'Select Files' dialog.")
-        btnBrowseDefault = QPushButton("Browse...")
-        btnBrowseDefault.clicked.connect(self.browseDefaultPath)
-        defaultPathLayout = QHBoxLayout()
-        defaultPathLayout.addWidget(self.defaultPathEdit, 1)
-        defaultPathLayout.addWidget(btnBrowseDefault)
-        formLayout.addRow(QLabel("Default 'Select Files' Directory:"), defaultPathLayout)
+    # ---------- UI ---------- #
+    def _build_ui(self):
+        self.tabs = QTabWidget(self)
+        self._build_general_tab()
+        self._build_tree_tab()
 
-        self.historyPathEdit = QLineEdit(self)
-        self.historyPathEdit.setPlaceholderText("Leave blank to use default temporary location")
-        self.historyPathEdit.setToolTip(f"Folder where history snapshots ({HISTORY_DIR_NAME}) will be stored.")
-        btnBrowseHistory = QPushButton("Browse...")
-        btnBrowseHistory.clicked.connect(self.browseHistoryPath)
-        historyPathLayout = QHBoxLayout()
-        historyPathLayout.addWidget(self.historyPathEdit, 1)
-        historyPathLayout.addWidget(btnBrowseHistory)
-        formLayout.addRow(QLabel("History Storage Directory:"), historyPathLayout)
-
-        # --- Include Date Modified Checkbox ---
-        self.includeTimestampCheck = QCheckBox("Add Date Modified to Output by Default", self)
-        settings = QSettings("Bastet", "FileKitty")
-        include_timestamp = settings.value("includeDateModified", "true")
-        self.includeTimestampCheck.setChecked(include_timestamp == "true")
-        formLayout.addRow(self.includeTimestampCheck)
-
-        # --- Use LLM Optimized Timestamp Format ---
-        self.useLlmTimestampCheck = QCheckBox("Use LLM Optimized Timestamp Format (ISO 8601)", self)
-        use_llm_timestamp = settings.value("useLlmTimestamp", "false")
-        self.useLlmTimestampCheck.setChecked(use_llm_timestamp == "true")
-        self.useLlmTimestampCheck.setEnabled(self.includeTimestampCheck.isChecked())
-        formLayout.addRow(self.useLlmTimestampCheck)
-
-        self.includeTimestampCheck.stateChanged.connect(self.updateLlmTimestampEnabled)
-
-        mainLayout.addLayout(formLayout)
-
-        buttonLayout = QHBoxLayout()
-        buttonLayout.addStretch()
-        btnSave = QPushButton("Save")
-        btnCancel = QPushButton("Cancel")
-        buttonLayout.addWidget(btnSave)
-        buttonLayout.addWidget(btnCancel)
+        # buttons
+        btnRow = QHBoxLayout()
+        btnSave, btnCancel = QPushButton("Save"), QPushButton("Cancel")
+        btnRow.addStretch()
+        btnRow.addWidget(btnSave)
+        btnRow.addWidget(btnCancel)
         btnSave.clicked.connect(self.accept)
         btnCancel.clicked.connect(self.reject)
-        mainLayout.addLayout(buttonLayout)
 
-        self.setLayout(mainLayout)
+        outer = QVBoxLayout(self)
+        outer.addWidget(self.tabs)
+        outer.addLayout(btnRow)
+        self.setLayout(outer)
 
-    def updateLlmTimestampEnabled(self, state):
-        # Disable the LLM checkbox if the main "include timestamp" box is unchecked
-        self.useLlmTimestampCheck.setEnabled(state == Qt.Checked)
+    def _build_general_tab(self):
+        general = QWidget()
+        form = QFormLayout(general)
 
-    def browseDefaultPath(self):
-        dir_path = QFileDialog.getExistingDirectory(
-            self, "Select Default Directory for Opening Files", self.defaultPathEdit.text()
-        )
-        if dir_path:
-            self.defaultPathEdit.setText(dir_path)
+        # Default open-dialog path
+        self.defaultPathEdit = QLineEdit()
+        browseDefault = QPushButton("Browse…")
+        browseDefault.clicked.connect(self._browse_default_dir)
+        row = QHBoxLayout()
+        row.addWidget(self.defaultPathEdit, 1)
+        row.addWidget(browseDefault)
+        form.addRow("Default ‘Select Files’ Directory:", row)
 
-    def browseHistoryPath(self):
-        dir_path = QFileDialog.getExistingDirectory(
-            self, "Select Base Directory for History Storage", self.historyPathEdit.text()
-        )
-        if dir_path:
-            self.historyPathEdit.setText(dir_path)
+        # History path
+        self.historyPathEdit = QLineEdit()
+        browseHist = QPushButton("Browse…")
+        browseHist.clicked.connect(self._browse_history_dir)
+        row = QHBoxLayout()
+        row.addWidget(self.historyPathEdit, 1)
+        row.addWidget(browseHist)
+        form.addRow("History Storage Directory:", row)
 
-    def get_default_path(self):
-        return self.defaultPathEdit.text().strip()
+        # timestamp prefs
+        self.includeTimestampCheck = QCheckBox("Add Date Modified to Output by Default")
+        self.useLlmTimestampCheck = QCheckBox("Use ISO-8601 Timestamp")
+        self.includeTimestampCheck.stateChanged.connect(lambda s: self.useLlmTimestampCheck.setEnabled(s == Qt.Checked))
+        form.addRow(self.includeTimestampCheck)
+        form.addRow(self.useLlmTimestampCheck)
 
-    def get_history_base_path(self):
-        return self.historyPathEdit.text().strip()
+        self.tabs.addTab(general, "General")
+
+    def _build_tree_tab(self):
+        tree = QWidget()
+        form = QFormLayout(tree)
+
+        # default base dir
+        self.treeBaseEdit = QLineEdit()
+        browseBase = QPushButton("Browse…")
+        browseBase.clicked.connect(self._browse_tree_base)
+        row = QHBoxLayout()
+        row.addWidget(self.treeBaseEdit, 1)
+        row.addWidget(browseBase)
+        form.addRow("Default Tree Base Directory:", row)
+
+        # default ignore list (multiline, like .gitignore)
+        self.treeIgnoreEdit = QTextEdit()
+        self.treeIgnoreEdit.setPlaceholderText("One pattern per line, or leave blank for built-in defaults.")
+        self.treeIgnoreEdit.setMinimumHeight(80)
+        form.addRow("Default Tree Ignore List:", self.treeIgnoreEdit)
+
+        note = QLabel("These defaults are used whenever the per-window Tree Settings dialog is blank.")
+        note.setWordWrap(True)
+        form.addRow(note)
+
+        self.tabs.addTab(tree, "Project Tree")
+
+    # ---------- browse helpers ---------- #
+    def _browse_default_dir(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Default Directory", self.defaultPathEdit.text())
+        if path:
+            self.defaultPathEdit.setText(path)
+
+    def _browse_history_dir(self):
+        path = QFileDialog.getExistingDirectory(self, "Select History Storage Directory", self.historyPathEdit.text())
+        if path:
+            self.historyPathEdit.setText(path)
+
+    def _browse_tree_base(self):
+        path = QFileDialog.getExistingDirectory(self, "Select Default Tree Base Directory", self.treeBaseEdit.text())
+        if path:
+            self.treeBaseEdit.setText(path)
+
+    # ---------- settings load/save ---------- #
+    def _load_settings(self):
+        s = QSettings("Bastet", "FileKitty")
+        self.defaultPathEdit.setText(s.value(SETTINGS_DEFAULT_PATH_KEY, ""))
+        self.historyPathEdit.setText(s.value(SETTINGS_HISTORY_PATH_KEY, ""))
+        self.includeTimestampCheck.setChecked(s.value("includeDateModified", "true") == "true")
+        self.useLlmTimestampCheck.setChecked(s.value("useLlmTimestamp", "false") == "true")
+        self.useLlmTimestampCheck.setEnabled(self.includeTimestampCheck.isChecked())
+
+        self.treeBaseEdit.setText(s.value(SETTINGS_TREE_DEF_BASE_KEY, ""))
+        self.treeIgnoreEdit.setPlainText(s.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT))
 
     def accept(self):
-        history_path = self.get_history_base_path()
-        if history_path and not os.path.isdir(history_path):
-            QMessageBox.warning(self, "Invalid Path", f"History path is not a valid directory:\n{history_path}")
+        # validate history dir
+        hist = self.historyPathEdit.text().strip()
+        if hist and not os.path.isdir(hist):
+            QMessageBox.warning(self, "Invalid Path", f"History path is not a valid directory:\n{hist}")
             return
+        self.history_path_changed = hist != self.initial_history_base_path
 
-        self.history_path_changed = history_path != self.initial_history_base_path
+        s = QSettings("Bastet", "FileKitty")
+        s.setValue(SETTINGS_DEFAULT_PATH_KEY, self.defaultPathEdit.text().strip())
+        s.setValue(SETTINGS_HISTORY_PATH_KEY, hist)
+        s.setValue("includeDateModified", "true" if self.includeTimestampCheck.isChecked() else "false")
+        s.setValue("useLlmTimestamp", "true" if self.useLlmTimestampCheck.isChecked() else "false")
 
-        settings = QSettings("Bastet", "FileKitty")
-        settings.setValue(SETTINGS_DEFAULT_PATH_KEY, self.get_default_path())
-        settings.setValue(SETTINGS_HISTORY_PATH_KEY, history_path)
-        settings.setValue("includeDateModified", "true" if self.includeTimestampCheck.isChecked() else "false")
-        settings.setValue("useLlmTimestamp", "true" if self.useLlmTimestampCheck.isChecked() else "false")
+        s.setValue(SETTINGS_TREE_DEF_BASE_KEY, self.treeBaseEdit.text().strip())
+        s.setValue(SETTINGS_TREE_DEF_IGNORE_KEY, self.treeIgnoreEdit.toPlainText().strip())
+
         super().accept()
 
 
