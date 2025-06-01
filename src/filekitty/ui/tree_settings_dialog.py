@@ -46,6 +46,7 @@ class TreeSettingsDialog(QDialog):
 
         # ignore list
         self.ignore_edit = QTextEdit()
+        self.ignore_edit.textChanged.connect(self._update_divergence_label)
         self.ignore_edit.setMinimumHeight(60)
         form.addRow("Ignore List / Regex:", self.ignore_edit)
 
@@ -76,18 +77,22 @@ class TreeSettingsDialog(QDialog):
         if p:
             self.base_edit.setText(p)
 
+    def _update_divergence_label(self):
+        s = QSettings("Bastet", "FileKitty")
+        default_ignore = s.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+        current_ignore = self.ignore_edit.toPlainText().strip() or default_ignore
+
+        if current_ignore != default_ignore:
+            self.divergeLabel.setText("Ignores set here are currently overriding the global default.")
+        else:
+            self.divergeLabel.setText("")
+
     def _load(self):
         s = QSettings("Bastet", "FileKitty")
         self.base_edit.setText(s.value(SETTINGS_TREE_BASE_KEY, ""))
         self.ignore_edit.setPlainText(s.value(SETTINGS_TREE_IGNORE_KEY, ""))
 
-        # show divergence notice
-        default_ignore = s.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
-        current_ignore = self.ignore_edit.toPlainText().strip() or default_ignore
-        if current_ignore != default_ignore:
-            self.divergeLabel.setText("Ignores differ from global default.")
-        else:
-            self.divergeLabel.setText("")
+        self._update_divergence_label()
 
     def accept(self):
         s = QSettings("Bastet", "FileKitty")
