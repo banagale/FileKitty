@@ -17,6 +17,7 @@ from filekitty.constants import (
     SETTINGS_TREE_IGNORE_KEY,
     TREE_IGNORE_DEFAULT,
 )
+from filekitty.ui.dialogs import _to_display, _to_storage
 
 
 class TreeSettingsDialog(QDialog):
@@ -90,12 +91,13 @@ class TreeSettingsDialog(QDialog):
     def _load(self):
         s = QSettings("Bastet", "FileKitty")
         self.base_edit.setText(s.value(SETTINGS_TREE_BASE_KEY, ""))
-        self.ignore_edit.setPlainText(s.value(SETTINGS_TREE_IGNORE_KEY, ""))
+        stored = s.value(SETTINGS_TREE_IGNORE_KEY, "")
+        self.ignore_edit.setPlainText(_to_display(stored))
 
         self._update_divergence_label()
 
     def accept(self):
         s = QSettings("Bastet", "FileKitty")
         s.setValue(SETTINGS_TREE_BASE_KEY, self.base_edit.text().strip())
-        s.setValue(SETTINGS_TREE_IGNORE_KEY, self.ignore_edit.toPlainText().strip())
+        s.setValue(SETTINGS_TREE_IGNORE_KEY, _to_storage(self.ignore_edit.toPlainText()))
         super().accept()

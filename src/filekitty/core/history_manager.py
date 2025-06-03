@@ -147,10 +147,18 @@ class HistoryManager:
 
         if self.history_index >= 0 and self.history_index < len(self.history):
             last_state = self.history[self.history_index]
-            keys_to_compare = ["files", "selected_items", "selection_mode", "selected_file", "file_hashes"]
+            # include 'tree' so a changed folder-tree counts as a new state
+            keys_to_compare = [
+                "files",
+                "selected_items",
+                "selection_mode",
+                "selected_file",
+                "file_hashes",
+                "tree",
+            ]
             is_duplicate = all(state.get(k) == last_state.get(k) for k in keys_to_compare)
             if is_duplicate:
-                print("Skipping save, state identical to previous.")
+                print("Skipping save – identical to previous (files + tree).")
                 return
 
         state_file_name = f"state_{state['id']}.json"

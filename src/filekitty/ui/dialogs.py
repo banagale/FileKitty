@@ -36,6 +36,17 @@ from filekitty.core.python_parser import parse_python_file
 from filekitty.core.utils import is_text_file
 
 
+def _to_storage(text: str) -> str:
+    """multiline → 'a|b|c' (canonical)"""
+    parts = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return "|".join(parts)
+
+
+def _to_display(stored: str) -> str:
+    """'a|b|c' → multiline (for QTextEdit)."""
+    return stored.replace("|", "\n")
+
+
 # --- Dialogs ---
 class PreferencesDialog(QDialog):
     """
@@ -125,7 +136,10 @@ class PreferencesDialog(QDialog):
 
         self.treeIgnoreEdit = QTextEdit()
         self.treeIgnoreEdit.setMinimumHeight(80)
-        self.treeIgnoreEdit.setPlaceholderText("One pattern per line, or leave blank for built-in defaults.")
+        self.treeIgnoreEdit.setPlaceholderText(
+            "One pattern per line, e.g.:\n__pycache__\n\\.git\n.*\\.tmp\nLeave blank to restore FileKitty defaults."
+        )
+
         form.addRow("Default Tree Ignore List:", self.treeIgnoreEdit)
 
         note = QLabel("Used when the window-specific Tree Settings dialog is blank.")
@@ -142,12 +156,14 @@ class PreferencesDialog(QDialog):
         self.fileIgnoreEdit = QTextEdit()
         self.fileIgnoreEdit.setMinimumHeight(80)
         self.fileIgnoreEdit.setPlaceholderText(
-            "Regex or |-delimited list of patterns to exclude from concatenated output."
+            "One pattern per line (regex is okay, too), e.g.:\n__pycache__\n\\.git\n.*\\.tmp\n"
+            "Leave blank to restore FileKitty defaults."
         )
         form.addRow("Main-Output Ignore List:", self.fileIgnoreEdit)
 
         note = QLabel(
-            "These patterns are checked *in addition to* the text/binary test. Leave blank for built-in defaults."
+            "Files whose paths match **any** of these patterns are hidden from the main output.  "
+            "Leave blank to restore the built-in defaults."
         )
         note.setWordWrap(True)
         form.addRow(note)
@@ -171,6 +187,8 @@ class PreferencesDialog(QDialog):
             self.treeBaseEdit.setText(p)
 
     # ---------- settings ---------- #
+    # -- ignore-list helpers -- #
+
     def _load_settings(self):
         s = QSettings("Bastet", "FileKitty")
         self.defaultPathEdit.setText(s.value(SETTINGS_DEFAULT_PATH_KEY, ""))
@@ -180,8 +198,11 @@ class PreferencesDialog(QDialog):
         self.useIsoCheck.setEnabled(self.includeTimestampCheck.isChecked())
 
         self.treeBaseEdit.setText(s.value(SETTINGS_TREE_DEF_BASE_KEY, ""))
-        self.treeIgnoreEdit.setPlainText(s.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT))
-        self.fileIgnoreEdit.setPlainText(s.value(SETTINGS_FILE_IGNORE_KEY, FILE_IGNORE_DEFAULT))
+
+        tree_raw = s.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT)
+        self.treeIgnoreEdit.setPlainText(_to_display(tree_raw or TREE_IGNORE_DEFAULT))
+        out_raw = s.value(SETTINGS_FILE_IGNORE_KEY, FILE_IGNORE_DEFAULT)
+        self.fileIgnoreEdit.setPlainText(_to_display(out_raw or FILE_IGNORE_DEFAULT))
 
     def accept(self):
         # validate history dir
@@ -198,10 +219,14 @@ class PreferencesDialog(QDialog):
         s.setValue("useLlmTimestamp", "true" if self.useIsoCheck.isChecked() else "false")
 
         s.setValue(SETTINGS_TREE_DEF_BASE_KEY, self.treeBaseEdit.text().strip())
-        s.setValue(SETTINGS_TREE_DEF_IGNORE_KEY, self.treeIgnoreEdit.toPlainText().strip())
-
-        s.setValue(SETTINGS_FILE_IGNORE_KEY, self.fileIgnoreEdit.toPlainText().strip())
-
+        s.setValue(
+            SETTINGS_TREE_DEF_IGNORE_KEY,
+            _to_storage(self.treeIgnoreEdit.toPlainText()),
+        )
+        s.setValue(
+            SETTINGS_FILE_IGNORE_KEY,
+            _to_storage(self.fileIgnoreEdit.toPlainText()),
+        )
         super().accept()
 
 

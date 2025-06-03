@@ -35,6 +35,7 @@ from filekitty.constants import (
     FILE_IGNORE_DEFAULT,
     SETTINGS_DEFAULT_PATH_KEY,
     SETTINGS_FILE_IGNORE_KEY,
+    SETTINGS_HISTORY_PATH_KEY,
     SETTINGS_TREE_BASE_KEY,
     SETTINGS_TREE_DEF_BASE_KEY,
     SETTINGS_TREE_DEF_IGNORE_KEY,
@@ -81,16 +82,9 @@ class FilePicker(QWidget):
         self.current_tree_snapshot: dict | None = None
 
         # ---- prefs ----
+        self.settings = QSettings("Bastet", "FileKitty")
         stg = QSettings("Bastet", "FileKitty")
-
-        ignore_raw = stg.value(SETTINGS_FILE_IGNORE_KEY, FILE_IGNORE_DEFAULT)
-        ignore_text = str(ignore_raw).strip() if ignore_raw is not None else FILE_IGNORE_DEFAULT
-
-        try:
-            self.output_ignore_regex = re.compile(ignore_text)
-        except re.error:
-            print(f"Invalid main output ignore regex: {ignore_text!r}")
-            self.output_ignore_regex = re.compile("$^")  # match nothing
+        self._reload_output_ignore_regex()
 
         self.include_tree = stg.value(SETTINGS_TREE_ENABLED_KEY, "true") == "true"
         # per-window overrides first
@@ -143,11 +137,29 @@ class FilePicker(QWidget):
         if self.currentFiles:
             self.refreshText()
 
+    def _open_preferences(self):
+        from filekitty.ui.dialogs import PreferencesDialog
+
+        dlg = PreferencesDialog(
+            self.settings.value(SETTINGS_DEFAULT_PATH_KEY, ""),
+            self.settings.value(SETTINGS_HISTORY_PATH_KEY, ""),
+            parent=self,
+        )
+        if dlg.exec_():
+            stg = QSettings("Bastet", "FileKitty")
+            self.tree_def_base = stg.value(SETTINGS_TREE_DEF_BASE_KEY, "").strip()
+            self.tree_def_ignore = stg.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+            if not stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip():
+                self.tree_ignore_regex = self.tree_def_ignore
+
+            self._reload_output_ignore_regex()
+            self.refreshText()
+
     def _open_tree_settings(self):
         from filekitty.ui.tree_settings_dialog import TreeSettingsDialog
 
         dlg = TreeSettingsDialog(self)
-        if dlg.exec_():  # user pressed OK
+        if dlg.exec_():
             stg = QSettings("Bastet", "FileKitty")
             self.tree_base_dir = stg.value(SETTINGS_TREE_BASE_KEY, "")
             self._update_tree_base_label()
@@ -167,7 +179,7 @@ class FilePicker(QWidget):
             or (os.path.commonpath(self.currentFiles) if self.currentFiles else "")
         )
 
-        ignore_regex = self.tree_ignore_regex.strip() or self.tree_def_ignore
+        ignore_regex = self._normalize_pattern(self.tree_ignore_regex.strip() or self.tree_def_ignore)
         if not base:
             return None
         try:
@@ -187,7 +199,7 @@ class FilePicker(QWidget):
             if base.startswith(home):
                 base = base.replace(home, "~")
             max_len = 40
-            truncated = base if len(base) <= max_len else f"...{base[-(max_len - 3) :]}"
+            truncated = base if len(base) <= max_len else f"...{base[-(max_len - 3):]}"
             self.treeBaseLabel.setText(f"Locked to {truncated}")
         else:
             self.treeBaseLabel.setText("")
@@ -304,6 +316,13 @@ class FilePicker(QWidget):
         self.textEdit.textChanged.connect(self.updateLineCountAndActionButtons)  # Updated method name
         self.setLayout(self.mainLayout)
 
+    def _normalize_pattern(self, raw: str) -> str:
+        """Convert newline-separated patterns into a pipe-joined regex."""
+        if not raw:
+            return ""
+        parts = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        return "|".join(parts)
+
     def toggleAutoCopy(self, state):
         self.auto_copy = state == Qt.Checked
         settings = QSettings("Bastet", "FileKitty")
@@ -385,10 +404,14 @@ class FilePicker(QWidget):
             self.include_date_modified = settings.value("includeDateModified", "true") == "true"
             self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
 
-            if dialog.history_path_changed:
-                print("History path setting changed.")
-                new_history_base_path = dialog.get_history_base_path()
-                self._change_history_directory(new_history_base_path)
+        stg = QSettings("Bastet", "FileKitty")
+        self.tree_def_base = stg.value(SETTINGS_TREE_DEF_BASE_KEY, "").strip()
+        self.tree_def_ignore = stg.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+        if not stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip():
+            self.tree_ignore_regex = self.tree_def_ignore
+
+        self._reload_output_ignore_regex()
+        self.refreshText()
 
     def _change_history_directory(self, new_base_path: str):
         """Handles changing the history storage location by delegating to HistoryManager."""
@@ -448,7 +471,7 @@ class FilePicker(QWidget):
             self.selection_mode,
             self.selected_file,
             is_text_file,
-            tree_snapshot=None,
+            tree_snapshot=self.current_tree_snapshot,
         )
 
         # auto-copy combined output if the setting is enabled
@@ -457,11 +480,12 @@ class FilePicker(QWidget):
 
     def _is_output_ignored(self, path: str) -> bool:
         """Return True if path matches the user’s output-ignore regex."""
+        if self.output_ignore_regex is None:
+            self._reload_output_ignore_regex()
         try:
             return bool(self.output_ignore_regex.search(path))
         except re.error:
-            # malformed regex → ignore nothing but warn once
-            print("Warning: invalid mainOutputIgnoreRegex")
+            print("Warning: invalid mainOutputIgnoreRegex (ignored)")
             return False
 
     def _update_ui_for_new_files(self):
@@ -491,6 +515,17 @@ class FilePicker(QWidget):
         # Enable "Select Code" only if there are Python text files
         self.btnSelectClassesFunctions.setEnabled(has_python_text_files)
         self.btnRefresh.setEnabled(has_files)
+
+    def _reload_output_ignore_regex(self) -> None:
+        """(Re)compile the pattern stored in QSettings into *self.output_ignore_regex*."""
+        stg = QSettings("Bastet", "FileKitty")
+        raw = stg.value(SETTINGS_FILE_IGNORE_KEY, FILE_IGNORE_DEFAULT)
+        pattern = self._normalize_pattern(str(raw) if raw is not None else FILE_IGNORE_DEFAULT)
+        try:
+            self.output_ignore_regex = re.compile(pattern)
+        except re.error:
+            print(f"Invalid output-ignore regex {pattern!r} – using no-match sentinel.")
+            self.output_ignore_regex = re.compile(r"$^")
 
     def selectClassesFunctions(self):
         """Opens the dialog to select specific classes/functions from Python files."""
@@ -553,7 +588,7 @@ class FilePicker(QWidget):
                     self.selection_mode,
                     self.selected_file,
                     is_text_file,
-                    tree_snapshot=None,
+                    tree_snapshot=self.current_tree_snapshot,
                 )
 
     def copyToClipboard(self):
@@ -576,13 +611,22 @@ class FilePicker(QWidget):
 
     def refreshText(self):
         """Reloads content from the current file list and updates the text view."""
+        print("Refreshing content...")
         self.current_tree_snapshot = None
-        print("Refreshing content...")  # Add some feedback
+
         try:
-            self.updateTextEdit()  # Re-process files
+            self.updateTextEdit()
+            self.history_manager.create_new_state(
+                self.currentFiles,
+                self.selected_items,
+                self.selection_mode,
+                self.selected_file,
+                is_text_file,
+                tree_snapshot=self.current_tree_snapshot,
+            )
         except Exception as e:
             QMessageBox.warning(self, "Refresh Error", f"Failed to refresh files: {str(e)}")
-            print(f"Refresh error details: {e}")  # Log details
+            print(f"Refresh error details: {e}")
 
     def updateTextEdit(self):
         """Render folder-tree (if any) + file contents. Does NOT create a history state."""
