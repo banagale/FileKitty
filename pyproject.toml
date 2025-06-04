@@ -29,6 +29,7 @@ path = "src/filekitty/resources/icon"
 
 [tool.poetry.scripts]
 filekitty = "filekitty.app_logic:main"
+format = "tools.format:main"
 
 [tool.ruff]
 line-length = 120
