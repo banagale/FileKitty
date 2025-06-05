@@ -1,5 +1,5 @@
-import atexit
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -9,7 +9,6 @@ from PyQt5.QtGui import (
     QDragEnterEvent,
     QDropEvent,
     QGuiApplication,
-    QIcon,
     QKeySequence,
 )
 from PyQt5.QtWidgets import (
@@ -33,17 +32,27 @@ from PyQt5.QtWidgets import (
 )
 
 from filekitty.constants import (
-    ICON_PATH,
+    FILE_IGNORE_DEFAULT,
     SETTINGS_DEFAULT_PATH_KEY,
+    SETTINGS_FILE_IGNORE_KEY,
+    SETTINGS_HISTORY_PATH_KEY,
+    SETTINGS_TREE_BASE_KEY,
+    SETTINGS_TREE_DEF_BASE_KEY,
+    SETTINGS_TREE_DEF_IGNORE_KEY,
+    SETTINGS_TREE_ENABLED_KEY,
+    SETTINGS_TREE_IGNORE_KEY,
+    TREE_IGNORE_DEFAULT,
 )
 from filekitty.core.history_manager import HistoryManager
+from filekitty.core.project_tree import generate_tree
 from filekitty.core.python_parser import extract_code_and_imports, parse_python_file
 from filekitty.core.utils import (
     detect_language,
+    detect_project_root,
+    display_path,
     is_text_file,
     read_file_contents,
-    sanitize_path,
-)  # Added sanitize_path, detect_language
+)
 from filekitty.ui.dialogs import PreferencesDialog, SelectClassesFunctionsDialog
 from filekitty.ui.qt_widgets import DragOutButton
 
@@ -52,39 +61,68 @@ from filekitty.ui.qt_widgets import DragOutButton
 class FilePicker(QWidget):
     def __init__(self, initial_files: list[str] | None = None):
         super().__init__()
+
+        self._generate_tree = generate_tree  # lazy
+
+        # ---- window basics ----
         self.setWindowTitle("FileKitty")
+        from PyQt5.QtGui import QIcon  # keep import
+
+        from filekitty.constants import ICON_PATH
+
         self.setWindowIcon(QIcon(ICON_PATH))
-        self.setGeometry(100, 100, 900, 700)  # Increased default width slightly
-        self.setAcceptDrops(True)  # Allow dropping files onto the main window
+        self.setGeometry(100, 100, 900, 700)
+        self.setAcceptDrops(True)
+
+        # ---- core state ----
+        self.project_root: Path | None = None
         self.currentFiles: list[str] = []
         self.selected_items: list[str] = []
-        self.selection_mode: str = "All Files"  # or "Single File"
-        self.selected_file: str | None = None  # Path of the single selected file
-        self._dragged_out_temp_files: list[str] = []  # Track temp files for cleanup
+        self.selection_mode: str = "All Files"
+        self.selected_file: str | None = None
+        self._dragged_out_temp_files: list[str] = []  # <— restored
+        self.current_tree_snapshot: dict | None = None
 
+        # ---- prefs ----
+        self.settings = QSettings("Bastet", "FileKitty")
+        stg = QSettings("Bastet", "FileKitty")
+        self._reload_output_ignore_regex()
+
+        self.include_tree = stg.value(SETTINGS_TREE_ENABLED_KEY, "true") == "true"
+        # per-window overrides first
+        self.tree_base_dir = stg.value(SETTINGS_TREE_BASE_KEY, "")
+        self.tree_ignore_regex = stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip()
+
+        # global defaults
+        self.tree_def_base = stg.value(SETTINGS_TREE_DEF_BASE_KEY, "").strip()
+        self.tree_def_ignore = stg.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+        if not self.tree_ignore_regex:
+            self.tree_ignore_regex = self.tree_def_ignore
+
+        self.include_date_modified = stg.value("includeDateModified", "true") == "true"
+        self.use_llm_timestamp = stg.value("useLlmTimestamp", "false") == "true"
+
+        # ---- managers / timers ----
         self.history_manager = HistoryManager(self)
-
-        # --- Load preferences for timestamps ---
-        settings = QSettings("Bastet", "FileKitty")
-        self.include_date_modified = settings.value("includeDateModified", "true") == "true"
-        self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
-
         self.staleCheckTimer = QTimer(self)
-        self.staleCheckTimer.timeout.connect(self._poll_stale_status)  # Connection confirmed
+        self.staleCheckTimer.timeout.connect(self._poll_stale_status)
         if self.history_manager.get_history_dir():
-            self.staleCheckTimer.start(self.history_manager.get_stale_check_interval())  # Use manager's interval
+            self.staleCheckTimer.start(self.history_manager.get_stale_check_interval())
 
+        # ---- build UI ----
         self.initUI()
         self.createActions()
         self.populateToolbar()
         self.createMenu()
-        self._update_history_ui()  # Initialize history button states etc.
+        self._update_history_ui()
 
-        # Register cleanup functions for application exit
-        atexit.register(self.history_manager.cleanup_history_files)  # Delegated
+        # ---- cleanup hooks ----
+        import atexit
+
+        atexit.register(self.history_manager.cleanup_history_files)
         atexit.register(self._cleanup_drag_out_files)
 
-        # --- open any files passed in on launch (Dock / Cmd-Tab) ---
+        # ---- initial files ----
         if initial_files:
             self._update_files_and_maybe_create_state(sorted(initial_files))
 
@@ -92,6 +130,79 @@ class FilePicker(QWidget):
         """Handles files opened via Dock or Finder."""
         # You could add logic to append to the current file list or replace:
         self._update_files_and_maybe_create_state([file_path])
+
+    # ───────────────── Tree helpers ───────────────── #
+
+    def _toggle_tree_enabled(self, state):
+        self.include_tree = state == Qt.Checked
+        QSettings("Bastet", "FileKitty").setValue(SETTINGS_TREE_ENABLED_KEY, "true" if self.include_tree else "false")
+        if self.currentFiles:
+            self.refreshText()
+
+    def _open_preferences(self):
+        from filekitty.ui.dialogs import PreferencesDialog
+
+        dlg = PreferencesDialog(
+            self.settings.value(SETTINGS_DEFAULT_PATH_KEY, ""),
+            self.settings.value(SETTINGS_HISTORY_PATH_KEY, ""),
+            parent=self,
+        )
+        if dlg.exec_():
+            stg = QSettings("Bastet", "FileKitty")
+            self.tree_def_base = stg.value(SETTINGS_TREE_DEF_BASE_KEY, "").strip()
+            self.tree_def_ignore = stg.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+            if not stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip():
+                self.tree_ignore_regex = self.tree_def_ignore
+
+            self._reload_output_ignore_regex()
+            self.refreshText()
+
+    def _open_tree_settings(self):
+        from filekitty.ui.tree_settings_dialog import TreeSettingsDialog
+
+        dlg = TreeSettingsDialog(self)
+        if dlg.exec_():
+            stg = QSettings("Bastet", "FileKitty")
+            self.tree_base_dir = stg.value(SETTINGS_TREE_BASE_KEY, "")
+            self._update_tree_base_label()
+            self.tree_ignore_regex = stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip() or self.tree_def_ignore
+            if self.currentFiles:
+                self.refreshText()
+
+    def _snapshot_tree(self) -> dict | None:
+        """Return a fresh tree snapshot or None if disabled/unavailable."""
+        if not self.include_tree:
+            return None
+
+        # base dir precedence:   locked override → global default → commonpath
+        base = (
+            self.tree_base_dir.strip()
+            or self.tree_def_base
+            or (os.path.commonpath(self.currentFiles) if self.currentFiles else "")
+        )
+
+        ignore_regex = self._normalize_pattern(self.tree_ignore_regex.strip() or self.tree_def_ignore)
+        if not base:
+            return None
+        try:
+            md_text, snap = self._generate_tree(base, ignore_regex, project_root=self.project_root)
+
+            self.current_tree_snapshot = snap
+            return snap
+        except Exception as e:
+            print(f"Tree generation failed: {e}")
+            return None
+
+    def _update_tree_base_label(self):
+        base = self.tree_base_dir.strip()
+        if base:
+            shown = display_path(base, self.project_root, show_ellipsis=True)
+            max_len = 40
+            if len(shown) > max_len:
+                shown = f"...{shown[-(max_len - 3) :]}"
+            self.treeBaseLabel.setText(f"Locked to {shown}")
+        else:
+            self.treeBaseLabel.setText("")
 
     def initUI(self):
         self.mainLayout = QVBoxLayout(self)
@@ -144,6 +255,29 @@ class FilePicker(QWidget):
         self.btnCopy.setEnabled(False)  # Disabled initially
         actionButtonLayout.addWidget(self.btnCopy)
 
+        # --- Folder Tree Controls ---
+        treeRow = QHBoxLayout()
+        treeRow.setContentsMargins(5, 5, 5, 5)  # ← add (same padding as action buttons)
+
+        self.treeCheck = QCheckBox("Include File Tree", self)
+        self.treeCheck.setChecked(self.include_tree)
+        self.treeCheck.stateChanged.connect(self._toggle_tree_enabled)
+        treeRow.addWidget(self.treeCheck)
+
+        treeGear = QPushButton("🛠Override Default File Tree Settings", self)
+        treeGear.setFixedWidth(260)
+        treeGear.setStyleSheet("padding: 6px 8px 6px 8px;")
+        treeGear.setToolTip("Configure tree base & ignore list")
+        treeGear.clicked.connect(self._open_tree_settings)
+        treeRow.addWidget(treeGear)
+
+        self.treeBaseLabel = QLabel("", self)
+        self.treeBaseLabel.setStyleSheet("color: gray; font-style: italic;")
+        treeRow.addWidget(self.treeBaseLabel)
+
+        treeRow.addStretch()
+        self.mainLayout.addLayout(treeRow)
+
         # --- Auto-Copy Checkbox ---
         self.autoCopyCheckBox = QCheckBox("Auto-Copy", self)
         self.autoCopyCheckBox.setToolTip(
@@ -151,6 +285,7 @@ class FilePicker(QWidget):
         )
         # Load from QSettings
         settings = QSettings("Bastet", "FileKitty")
+        self._update_tree_base_label()
         auto_copy_value = settings.value("autoCopyOnImport")
         if auto_copy_value is None:
             self.auto_copy = True
@@ -180,6 +315,13 @@ class FilePicker(QWidget):
         # Connect signals
         self.textEdit.textChanged.connect(self.updateLineCountAndActionButtons)  # Updated method name
         self.setLayout(self.mainLayout)
+
+    def _normalize_pattern(self, raw: str) -> str:
+        """Convert newline-separated patterns into a pipe-joined regex."""
+        if not raw:
+            return ""
+        parts = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+        return "|".join(parts)
 
     def toggleAutoCopy(self, state):
         self.auto_copy = state == Qt.Checked
@@ -262,10 +404,14 @@ class FilePicker(QWidget):
             self.include_date_modified = settings.value("includeDateModified", "true") == "true"
             self.use_llm_timestamp = settings.value("useLlmTimestamp", "false") == "true"
 
-            if dialog.history_path_changed:
-                print("History path setting changed.")
-                new_history_base_path = dialog.get_history_base_path()
-                self._change_history_directory(new_history_base_path)
+        stg = QSettings("Bastet", "FileKitty")
+        self.tree_def_base = stg.value(SETTINGS_TREE_DEF_BASE_KEY, "").strip()
+        self.tree_def_ignore = stg.value(SETTINGS_TREE_DEF_IGNORE_KEY, TREE_IGNORE_DEFAULT).strip()
+        if not stg.value(SETTINGS_TREE_IGNORE_KEY, "").strip():
+            self.tree_ignore_regex = self.tree_def_ignore
+
+        self._reload_output_ignore_regex()
+        self.refreshText()
 
     def _change_history_directory(self, new_base_path: str):
         """Handles changing the history storage location by delegating to HistoryManager."""
@@ -302,13 +448,22 @@ class FilePicker(QWidget):
             "Configuration (*.json *.yaml *.yml *.toml *.ini)"
         )
         files, _ = QFileDialog.getOpenFileNames(self, "Select files", default_path, file_filter, options=options)
+        files = [f for f in files if not self._is_output_ignored(f)]
         if files:
             # Process selected files
             self._update_files_and_maybe_create_state(sorted(files))
 
     def _update_files_and_maybe_create_state(self, files: list[str]):
         """Updates the internal file list and UI, then creates a history state."""
+        files = [f for f in files if not self._is_output_ignored(f)]
         self.currentFiles = files
+        files_for_root = self.currentFiles or ([self.tree_base_dir] if self.tree_base_dir else [])
+        self.project_root = detect_project_root(files_for_root)
+        if self.tree_base_dir:
+            self.project_root = Path(self.tree_base_dir).expanduser().resolve()
+        else:
+            self.project_root = detect_project_root(files_for_root)
+        self.current_tree_snapshot = None
         # Reset selections when file list changes significantly
         self.selected_items = []
         self.selection_mode = "All Files"
@@ -317,12 +472,27 @@ class FilePicker(QWidget):
         self._update_ui_for_new_files()  # Update the QListWidget
         self.updateTextEdit()  # Update the QTextEdit content
         self.history_manager.create_new_state(  # Delegated
-            self.currentFiles, self.selected_items, self.selection_mode, self.selected_file, is_text_file
+            self.currentFiles,
+            self.selected_items,
+            self.selection_mode,
+            self.selected_file,
+            is_text_file,
+            tree_snapshot=self.current_tree_snapshot,
         )
 
         # auto-copy combined output if the setting is enabled
         if getattr(self, "auto_copy", False):
             self.copyToClipboard()
+
+    def _is_output_ignored(self, path: str) -> bool:
+        """Return True if path matches the user’s output-ignore regex."""
+        if self.output_ignore_regex is None:
+            self._reload_output_ignore_regex()
+        try:
+            return bool(self.output_ignore_regex.search(path))
+        except re.error:
+            print("Warning: invalid mainOutputIgnoreRegex (ignored)")
+            return False
 
     def _update_ui_for_new_files(self):
         """Populates the file list widget based on self.currentFiles."""
@@ -331,7 +501,7 @@ class FilePicker(QWidget):
         has_python_text_files = False
 
         for file_path in self.currentFiles:
-            display_text = sanitize_path(file_path)  # Use util function
+            display_text = display_path(file_path, self.project_root, show_ellipsis=True)
 
             item = QListWidgetItem(display_text)
 
@@ -340,6 +510,9 @@ class FilePicker(QWidget):
                 # Grey out and disable non-text files slightly differently
                 item.setForeground(QColor(Qt.gray))
                 item.setToolTip("Binary or non-standard text file, content not shown.")
+            if self._is_output_ignored(file_path):
+                item.setForeground(QColor(Qt.gray))
+                item.setToolTip("File ignored based on Output Ignore List.")
             elif file_path.endswith(".py"):
                 has_python_text_files = True
 
@@ -348,6 +521,17 @@ class FilePicker(QWidget):
         # Enable "Select Code" only if there are Python text files
         self.btnSelectClassesFunctions.setEnabled(has_python_text_files)
         self.btnRefresh.setEnabled(has_files)
+
+    def _reload_output_ignore_regex(self) -> None:
+        """(Re)compile the pattern stored in QSettings into *self.output_ignore_regex*."""
+        stg = QSettings("Bastet", "FileKitty")
+        raw = stg.value(SETTINGS_FILE_IGNORE_KEY, FILE_IGNORE_DEFAULT)
+        pattern = self._normalize_pattern(str(raw) if raw is not None else FILE_IGNORE_DEFAULT)
+        try:
+            self.output_ignore_regex = re.compile(pattern)
+        except re.error:
+            print(f"Invalid output-ignore regex {pattern!r} – using no-match sentinel.")
+            self.output_ignore_regex = re.compile(r"$^")
 
     def selectClassesFunctions(self):
         """Opens the dialog to select specific classes/functions from Python files."""
@@ -405,7 +589,12 @@ class FilePicker(QWidget):
                 self.selected_items, self.selection_mode, self.selected_file = new_selected_items, new_mode, new_file
                 self.updateTextEdit()  # Regenerate text output
                 self.history_manager.create_new_state(  # Delegated
-                    self.currentFiles, self.selected_items, self.selection_mode, self.selected_file, is_text_file
+                    self.currentFiles,
+                    self.selected_items,
+                    self.selection_mode,
+                    self.selected_file,
+                    is_text_file,
+                    tree_snapshot=self.current_tree_snapshot,
                 )
 
     def copyToClipboard(self):
@@ -428,134 +617,133 @@ class FilePicker(QWidget):
 
     def refreshText(self):
         """Reloads content from the current file list and updates the text view."""
-        print("Refreshing content...")  # Add some feedback
+        print("Refreshing content...")
+        self.current_tree_snapshot = None
+
         try:
-            self.updateTextEdit()  # Re-process files
-            # Check if content *actually* changed before creating new state? Optional optimization.
-            self.history_manager.create_new_state(  # Delegated
-                self.currentFiles, self.selected_items, self.selection_mode, self.selected_file, is_text_file
+            self.updateTextEdit()
+            self.history_manager.create_new_state(
+                self.currentFiles,
+                self.selected_items,
+                self.selection_mode,
+                self.selected_file,
+                is_text_file,
+                tree_snapshot=self.current_tree_snapshot,
             )
         except Exception as e:
             QMessageBox.warning(self, "Refresh Error", f"Failed to refresh files: {str(e)}")
-            print(f"Refresh error details: {e}")  # Log details
+            print(f"Refresh error details: {e}")
 
     def updateTextEdit(self):
-        """Generates the combined text output based on current files and selections."""
-        if self.history_manager.is_loading_state():  # Use HistoryManager's state
+        """Render folder-tree (if any) + file contents. Does NOT create a history state."""
+        if self.history_manager.is_loading_state():
             return
 
+        # ────────── Decide which tree snapshot to use ──────────
+        if self.current_tree_snapshot:  # coming from history navigation
+            tree_snap = self.current_tree_snapshot
+        else:  # fresh view / refresh
+            tree_snap = self._snapshot_tree()  # may be None
+            if tree_snap:  # cache for possible reuse
+                self.current_tree_snapshot = tree_snap
+
+        tree_md = tree_snap["rendered"] if tree_snap else ""
+
+        # ────────── Existing file-concatenation logic (unaltered) ──────────
         combined_code, files_to_process, parse_errors = "", [], []
 
-        # Determine which files to process based on selection mode
+        # Which files should we include?
         if self.selection_mode == "Single File" and self.selected_file:
-            # Check if selected file is still in the main list and is a text file
             if self.selected_file in self.currentFiles and is_text_file(self.selected_file):
                 files_to_process = [self.selected_file]
             else:
-                # Handle case where selected file is no longer valid or not text
                 reason = "not found" if self.selected_file not in self.currentFiles else "not a text file"
                 self.textEdit.setPlainText(f"# Error: Selected file {Path(self.selected_file).name} is {reason}.")
                 self.updateLineCountAndActionButtons()
                 return
-        else:  # "All Files" mode
-            # Process only text files from the current list
+        else:
             files_to_process = [f for f in self.currentFiles if is_text_file(f)]
 
-        # Display message if no text files are available to process
-        if not files_to_process and self.currentFiles:
-            self.textEdit.setPlainText("# No text files selected or available to display content.")
+        if not self.currentFiles:
+            # No files dropped → maybe tree is still useful
+            parts = [tree_md] if tree_md else []
+            self.textEdit.setPlainText("\n\n".join(parts))
             self.updateLineCountAndActionButtons()
             return
-        elif not self.currentFiles:
-            self.textEdit.setPlainText("")  # Clear if no files selected at all
+
+        if not files_to_process:
+            # Files dropped, but none were text — show tree + warning
+            parts = [tree_md, "# No text files selected or available to display content."]
+            self.textEdit.setPlainText("\n\n".join([p for p in parts if p]))
             self.updateLineCountAndActionButtons()
             return
 
         for file_path in files_to_process:
-            # --- Skip non-text files (already filtered, but double check) ---
             if not is_text_file(file_path):
-                continue  # Should not happen due to pre-filtering, but safe
+                continue
 
-            current_sanitized_path = sanitize_path(file_path)  # Use util function
+            current_sanitized_path = display_path(file_path, self.project_root, show_ellipsis=True)
             try:
-                # Get date modified string for output (LLM-friendly)
                 stat = Path(file_path).stat()
                 if self.use_llm_timestamp:
                     mtime = datetime.fromtimestamp(stat.st_mtime).astimezone().isoformat()
                 else:
                     mtime = datetime.fromtimestamp(stat.st_mtime).astimezone().strftime("%b %d, %Y %I:%M %p %Z")
-
                 modified_line_for_output = f"**Last modified: {mtime}**"
-
             except Exception as e:
                 print(f"Warning: Could not retrieve modified time for {file_path}: {e}")
                 modified_line_for_output = "**Last modified: ?**"
+
             try:
-                # Process Python files (potentially filtering classes/functions)
                 if file_path.endswith(".py"):
                     classes, functions, _, file_content = parse_python_file(file_path)
                     is_filtered = bool(self.selected_items)
-                    # Items defined in *this specific file*
                     items_in_this_file = set(classes) | set(functions)
+                    relevant_items = any(item in items_in_this_file for item in self.selected_items)
+                    should_filter = is_filtered and (self.selection_mode == "Single File" or relevant_items)
 
-                    # Determine if filtering applies to *this specific file*
-                    # Does this file contain any of the globally selected items?
-                    relevant_items_exist_in_file = any(item in items_in_this_file for item in self.selected_items)
-
-                    should_filter_this_file = is_filtered and (
-                        self.selection_mode == "Single File" or relevant_items_exist_in_file
-                    )
-
-                    if should_filter_this_file:
-                        # Determine *which* items to extract from this file
-                        items_to_extract = (
-                            # In Single File mode, try extracting all globally selected items (if they exist here)
-                            [item for item in self.selected_items if item in items_in_this_file]
-                            if self.selection_mode == "Single File"
-                            # In All Files mode, extract only the selected items present in this file
-                            else [item for item in self.selected_items if item in items_in_this_file]
-                        )
-
-                        if items_to_extract:  # Only proceed if there are relevant items to extract
+                    items_to_extract = []  # ensure defined for all code paths
+                    if should_filter:
+                        items_to_extract = [item for item in self.selected_items if item in items_in_this_file]
+                        if items_to_extract:
                             filtered_code = extract_code_and_imports(
-                                file_content, items_to_extract, current_sanitized_path, modified_line_for_output
+                                file_content,
+                                items_to_extract,
+                                current_sanitized_path,
+                                modified_line_for_output,
                             )
-                            if filtered_code.strip():  # Add only if extraction yielded something
-                                combined_code += filtered_code + "\n\n"  # Add extra newline between extracts
-                        # If filtering yields nothing for this file, we implicitly skip its content
-
-                    else:  # Not filtering this Python file, include its whole content
+                            if filtered_code.strip():
+                                combined_code += filtered_code + "\n\n"
+                    else:
                         combined_code += (
                             f"# {current_sanitized_path}\n"
                             f"{modified_line_for_output}\n\n"
-                            f"```python\n"
-                            f"{file_content.strip()}\n"
-                            f"```\n\n"
+                            f"```python\n{file_content.strip()}\n```\n\n"
                         )
-
-                # Process other (text) file types
                 else:
                     file_content = read_file_contents(file_path)
-                    lang = detect_language(file_path)  # Use util function
+                    lang = detect_language(file_path)
                     combined_code += (
-                        f"# {current_sanitized_path}\n{modified_line_for_output}\n\n```{lang}\n"
-                        f"{file_content.strip()}\n```\n\n"
+                        f"# {current_sanitized_path}\n{modified_line_for_output}\n\n"
+                        f"```{lang}\n{file_content.strip()}\n```\n\n"
                     )
 
             except FileNotFoundError:
                 parse_errors.append(f"{current_sanitized_path}: File not found")
             except Exception as e:
-                # Catch parsing or reading errors
                 parse_errors.append(f"{current_sanitized_path}: Error processing - {e}")
 
-        # Update the text edit widget
-        self.textEdit.setPlainText(combined_code.strip())
-        # updateLineCountAndActionButtons is called automatically via textChanged signal
+        # ────────── Merge tree + files and show ──────────
+        parts = [p for p in (tree_md, combined_code.strip()) if p]
+        self.textEdit.setPlainText("\n\n".join(parts))
 
-        # Show accumulated errors, if any
+        # Line-count / button updates fire via textChanged signal
+
         if parse_errors:
             QMessageBox.warning(
-                self, "Processing Errors", "Errors occurred for some files:\n" + "\n".join(parse_errors)
+                self,
+                "Processing Errors",
+                "Errors occurred for some files:\n" + "\n".join(parse_errors),
             )
 
     def dragEnterEvent(self, event: QDragEnterEvent):
@@ -591,7 +779,10 @@ class FilePicker(QWidget):
                                     file_path = os.path.join(root, filename)
                                     # Double check it's a file and not a broken symlink etc.
                                     if Path(file_path).is_file():
+                                        if self._is_output_ignored(file_path):
+                                            continue
                                         files_to_add.append(file_path)
+
                         except OSError as e:
                             print(f"Error walking directory {local_path}: {e}")
                             QMessageBox.warning(
@@ -630,12 +821,15 @@ class FilePicker(QWidget):
             self.currentFiles = state_data.get("files", [])
             self.selected_items = state_data.get("selected_items", [])
             self.selection_mode = state_data.get("selection_mode", "All Files")
-            self.selected_file = state_data.get("selected_file", None)
+            self.selected_file = state_data.get("selected_file")
+            self.current_tree_snapshot = state_data.get("tree")
+
+            # Sync checkbox to stored snapshot
+            self.include_tree = bool(self.current_tree_snapshot)
+            self.treeCheck.setChecked(self.include_tree)
 
             self._update_ui_for_new_files()
             self.updateTextEdit()
-            # UI updates like _update_history_ui and stale status are handled in go_back/go_forward
-            # after state is applied.
         except Exception as e:  # Catch any error during state application
             print(f"Error applying loaded state data: {e}")
             # Optionally, show a message to the user
@@ -719,23 +913,20 @@ class FilePicker(QWidget):
         elif "error" in statuses:
             display_text = "File Errors!"
         elif "modified" in statuses:
-            display_text = "Files Modified"
+            display_text = "Files Modified since this state. You may want to refresh."
         else:
             display_text = "Files Changed (?)"
 
         tooltip_lines = ["Files have changed since this history state was captured:"]
         for path in sorted(stale_status.keys()):
             status = stale_status[path]
-            sanitized = sanitize_path(path)  # Use util function
+            sanitized = display_path(path, self.project_root, show_ellipsis=True)
             tooltip_lines.append(f"- {sanitized} ({status})")
         tooltip = "\n".join(tooltip_lines)
 
-        self.staleIndicatorLabel.setText(f"⚠️ {display_text}")
+        self.staleIndicatorLabel.setText(f"{display_text}")
         self.staleIndicatorLabel.setToolTip(tooltip)
         self.staleIndicatorLabel.show()
-
-    # _cleanup_history_files is now fully in HistoryManager and registered via
-    # atexit(self.history_manager.cleanup_history_files)
 
     def _cleanup_drag_out_files(self):
         """Removes temporary files created by the DragOutButton."""

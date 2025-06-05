@@ -118,7 +118,16 @@ class HistoryManager:
             print(f"Error hashing file {file_path}: {e}")
             return HASH_ERROR_SENTINEL
 
-    def create_new_state(self, current_files, selected_items, selection_mode, selected_file, is_text_file_func):
+    def create_new_state(
+        self,
+        current_files,
+        selected_items,
+        selection_mode,
+        selected_file,
+        is_text_file_func,
+        tree_snapshot: dict | None = None,
+    ):
+        """Save a history snapshot, including optional tree data."""
         if self._is_loading_state or not self.history_dir:
             return
 
@@ -133,14 +142,23 @@ class HistoryManager:
             "selection_mode": selection_mode,
             "selected_file": selected_file,
             "file_hashes": file_hashes,
+            "tree": tree_snapshot or {},
         }
 
         if self.history_index >= 0 and self.history_index < len(self.history):
             last_state = self.history[self.history_index]
-            keys_to_compare = ["files", "selected_items", "selection_mode", "selected_file", "file_hashes"]
+            # include 'tree' so a changed folder-tree counts as a new state
+            keys_to_compare = [
+                "files",
+                "selected_items",
+                "selection_mode",
+                "selected_file",
+                "file_hashes",
+                "tree",
+            ]
             is_duplicate = all(state.get(k) == last_state.get(k) for k in keys_to_compare)
             if is_duplicate:
-                print("Skipping save, state identical to previous.")
+                print("Skipping save – identical to previous (files + tree).")
                 return
 
         state_file_name = f"state_{state['id']}.json"
