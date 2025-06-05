@@ -48,10 +48,11 @@ from filekitty.core.project_tree import generate_tree
 from filekitty.core.python_parser import extract_code_and_imports, parse_python_file
 from filekitty.core.utils import (
     detect_language,
+    detect_project_root,
+    display_path,
     is_text_file,
     read_file_contents,
-    sanitize_path,
-)  # Added sanitize_path, detect_language
+)
 from filekitty.ui.dialogs import PreferencesDialog, SelectClassesFunctionsDialog
 from filekitty.ui.qt_widgets import DragOutButton
 
@@ -74,6 +75,7 @@ class FilePicker(QWidget):
         self.setAcceptDrops(True)
 
         # ---- core state ----
+        self.project_root: Path | None = None
         self.currentFiles: list[str] = []
         self.selected_items: list[str] = []
         self.selection_mode: str = "All Files"
@@ -183,7 +185,7 @@ class FilePicker(QWidget):
         if not base:
             return None
         try:
-            md_text, snap = self._generate_tree(base, ignore_regex)
+            md_text, snap = self._generate_tree(base, ignore_regex, project_root=self.project_root)
 
             self.current_tree_snapshot = snap
             return snap
@@ -192,15 +194,13 @@ class FilePicker(QWidget):
             return None
 
     def _update_tree_base_label(self):
-        """Update label to reflect locked base directory."""
         base = self.tree_base_dir.strip()
         if base:
-            home = str(Path.home())
-            if base.startswith(home):
-                base = base.replace(home, "~")
+            shown = display_path(base, self.project_root, show_ellipsis=True)
             max_len = 40
-            truncated = base if len(base) <= max_len else f"...{base[-(max_len - 3):]}"
-            self.treeBaseLabel.setText(f"Locked to {truncated}")
+            if len(shown) > max_len:
+                shown = f"...{shown[-(max_len - 3) :]}"
+            self.treeBaseLabel.setText(f"Locked to {shown}")
         else:
             self.treeBaseLabel.setText("")
 
@@ -457,6 +457,12 @@ class FilePicker(QWidget):
         """Updates the internal file list and UI, then creates a history state."""
         files = [f for f in files if not self._is_output_ignored(f)]
         self.currentFiles = files
+        files_for_root = self.currentFiles or ([self.tree_base_dir] if self.tree_base_dir else [])
+        self.project_root = detect_project_root(files_for_root)
+        if self.tree_base_dir:
+            self.project_root = Path(self.tree_base_dir).expanduser().resolve()
+        else:
+            self.project_root = detect_project_root(files_for_root)
         self.current_tree_snapshot = None
         # Reset selections when file list changes significantly
         self.selected_items = []
@@ -495,7 +501,7 @@ class FilePicker(QWidget):
         has_python_text_files = False
 
         for file_path in self.currentFiles:
-            display_text = sanitize_path(file_path)  # Use util function
+            display_text = display_path(file_path, self.project_root, show_ellipsis=True)
 
             item = QListWidgetItem(display_text)
 
@@ -676,7 +682,7 @@ class FilePicker(QWidget):
             if not is_text_file(file_path):
                 continue
 
-            current_sanitized_path = sanitize_path(file_path)
+            current_sanitized_path = display_path(file_path, self.project_root, show_ellipsis=True)
             try:
                 stat = Path(file_path).stat()
                 if self.use_llm_timestamp:
@@ -907,23 +913,20 @@ class FilePicker(QWidget):
         elif "error" in statuses:
             display_text = "File Errors!"
         elif "modified" in statuses:
-            display_text = "Files Modified"
+            display_text = "Files Modified since this state. You may want to refresh."
         else:
             display_text = "Files Changed (?)"
 
         tooltip_lines = ["Files have changed since this history state was captured:"]
         for path in sorted(stale_status.keys()):
             status = stale_status[path]
-            sanitized = sanitize_path(path)  # Use util function
+            sanitized = display_path(path, self.project_root, show_ellipsis=True)
             tooltip_lines.append(f"- {sanitized} ({status})")
         tooltip = "\n".join(tooltip_lines)
 
-        self.staleIndicatorLabel.setText(f"⚠️ {display_text}")
+        self.staleIndicatorLabel.setText(f"{display_text}")
         self.staleIndicatorLabel.setToolTip(tooltip)
         self.staleIndicatorLabel.show()
-
-    # _cleanup_history_files is now fully in HistoryManager and registered via
-    # atexit(self.history_manager.cleanup_history_files)
 
     def _cleanup_drag_out_files(self):
         """Removes temporary files created by the DragOutButton."""

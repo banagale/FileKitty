@@ -1,7 +1,11 @@
+import logging
 import os
+from collections.abc import Iterable
 from pathlib import Path
 
 from filekitty.constants import TEXT_CHECK_CHUNK_SIZE
+
+logger = logging.getLogger(__name__)
 
 
 # --- Helper Function ---
@@ -49,33 +53,6 @@ def read_file_contents(file_path):
     raise UnicodeDecodeError(f"Could not decode file {file_path} with tried encodings: {', '.join(encodings_to_try)}.")
 
 
-def sanitize_path(file_path: str) -> str:
-    """Attempts to shorten the file path using '~' for the home directory."""
-    try:
-        path = Path(file_path).resolve()
-        home_dir = Path.home().resolve()
-
-        # Use is_relative_to if available (Python 3.9+)
-        if hasattr(path, "is_relative_to") and path.is_relative_to(home_dir):
-            return str(Path("~") / path.relative_to(home_dir))
-        # Fallback for older Python or different drive letters on Windows
-        # Convert both to strings for reliable comparison across OS/versions
-        str_path = str(path)
-        str_home = str(home_dir)
-        if str_path.startswith(str_home):
-            # Ensure a path separator follows the home dir part before replacing
-            if len(str_path) > len(str_home) and str_path[len(str_home)] in (os.sep, os.altsep):
-                return "~" + str_path[len(str_home) :]
-            elif len(str_path) == len(str_home):  # Exact match to home dir
-                return "~"
-        # If not relative to home, return the absolute path
-        return str(path)
-    except Exception as e:
-        # In case of any error (e.g., resolving issues), return original path
-        print(f"Warning: Could not sanitize path '{file_path}': {e}")
-        return file_path
-
-
 def detect_language(file_path: str) -> str:
     """Returns a language identifier string based on file extension for Markdown code blocks."""
     suffix = Path(file_path).suffix.lower()
@@ -115,3 +92,88 @@ def detect_language(file_path: str) -> str:
         ".txt": "",  # Default to no language for .txt
     }
     return lang_map.get(suffix, "")  # Return mapped language or empty string
+
+
+DEFAULT_PROJECT_MARKERS = {
+    "pyproject.toml",
+    "setup.py",
+    "requirements.txt",
+    "package.json",
+    "node_modules",
+    "Cargo.toml",
+    ".git",
+    "pom.xml",
+    "build.gradle",
+}
+
+
+def detect_project_root(files: Iterable[str], project_markers: set[str] = DEFAULT_PROJECT_MARKERS) -> Path | None:
+    """Find likely project root by looking for marker files up from common ancestor of given file paths."""
+    paths = [Path(f).resolve() for f in files]
+    if not paths:
+        return None
+
+    try:
+        common = Path(os.path.commonpath(paths))
+    except ValueError:
+        return None  # e.g., files on different drives
+
+    for parent in [common] + list(common.parents):
+        if any((parent / marker).exists() for marker in project_markers):
+            return parent
+        if parent == Path.home() or parent.parent == parent:
+            break
+
+    return common
+
+
+def display_path(
+    path: str | Path,
+    project_root: Path | None = None,
+    *,
+    show_ellipsis: bool = False,
+) -> str:
+    """
+    Format a path for display:
+    - Always try to show as relative to HOME
+    - If project_root is inside home, ellipsize between ~ and root if needed
+    - Always show full path from root → file, including parent folders
+    - Else fallback to absolute path
+    """
+    try:
+        p = Path(path).expanduser().resolve()
+        home = Path.home().resolve()
+
+        if project_root:
+            project_root = project_root.expanduser().resolve()
+
+        # Ensure ~ prefix if possible
+        if p.is_relative_to(home):
+            rel_to_home = p.relative_to(home)
+            parts = rel_to_home.parts
+
+            # If project root is inside home and p is under project root
+            if project_root and p.is_relative_to(project_root) and project_root.is_relative_to(home):
+                rel_root_parts = project_root.relative_to(home).parts
+                file_rel_parts = p.relative_to(project_root).parts
+
+                if show_ellipsis and len(rel_root_parts) > 2:
+                    abbreviated_root = f"{rel_root_parts[0]}/…/{rel_root_parts[-1]}"
+                else:
+                    abbreviated_root = "/".join(rel_root_parts)
+
+                full_path = f"~/{abbreviated_root}/" + "/".join(file_rel_parts)
+                return full_path
+
+            # p is in home but not under project_root (or root is outside home)
+            if show_ellipsis and len(parts) > 5:
+                abbreviated = f"{parts[0]}/{parts[1]}/…/{parts[-2]}/{parts[-1]}"
+                return f"~/{abbreviated}"
+            return f"~/{rel_to_home}"
+
+        # Else: not under home dir → show full absolute path
+        return str(p)
+
+    except Exception:
+        logger.warning("display_path failed for %s", path)
+        return str(path)
