@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -76,17 +77,13 @@ class PreferencesDialog(QDialog):
         self._build_tree_tab()
 
         # buttons
-        btnRow = QHBoxLayout()
-        save, cancel = QPushButton("Save"), QPushButton("Cancel")
-        btnRow.addStretch()
-        btnRow.addWidget(save)
-        btnRow.addWidget(cancel)
-        save.clicked.connect(self.accept)
-        cancel.clicked.connect(self.reject)
+        button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
 
         root = QVBoxLayout(self)
         root.addWidget(self.tabs)
-        root.addLayout(btnRow)
+        root.addWidget(button_box)
         self.setLayout(root)
 
     # ---------- 1 General ---------- #
