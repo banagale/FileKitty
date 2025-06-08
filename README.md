@@ -2,30 +2,31 @@
 
 <img src="https://github.com/banagale/FileKitty/assets/1409710/d7c68e71-5245-499b-8be9-3ca1f88adc1b" width="200">
 
-A macOS utility for selecting, combining, and copying the contents of files — ideal for use with **LLMs and generative AI tools**. FileKitty lets you grab context from multiple files with one click and keeps a full history of your selections.
+A macOS utility for selecting, combining, and copying the contents of files — ideal for use with **LLMs and generative AI tools**. FileKitty lets you
+grab context from multiple files with one click and keeps a full history of your selections.
 
 ---
 
 ## Why FileKitty?
 
-LLM tools like **Cursor**, **GitHub Copilot Chat**, and **Claude Code** are powerful — but behind the scenes, they often make API completion requests using **bloated, overstuffed prompts**. These include entire repos, unrelated files, and boilerplate-heavy context, which can **degrade the quality of even state-of-the-art models.**
+LLM tools like **Cursor**, **GitHub Copilot Chat**, and **Claude Code** are powerful — but behind the scenes, they often make API completion requests
+using **bloated, overstuffed prompts**. These include entire repos, unrelated files, and boilerplate-heavy context, which can **degrade the quality of
+even state-of-the-art models.**
 
-**FileKitty gives you control over the prompt.** It’s a lightweight tool for assembling precise, readable context that pairs perfectly with interactive (chat-based) LLM workflows — whether you're using **ChatGPT**, **Claude**, **Gemini**, or any number of **local models**.
+**FileKitty gives you control over the prompt.** It’s a lightweight tool for assembling precise, readable context that pairs perfectly with
+interactive (chat-based) LLM workflows — whether you're using **ChatGPT**, **Claude**, **Gemini**, or any number of **local models**.
 
 ### FileKitty helps you:
 
 * **For coding:** Select only the files, classes, or functions you're working on — and get direct, targeted suggestions instead of vague completions.
-* **For documentation and planning:** Combine real code with Slack threads, meeting notes, or config files to produce accurate explanations, writeups, and planning docs.
+* **For documentation and planning:** Combine real code with Slack threads, meeting notes, or config files to produce accurate explanations, writeups,
+  and planning docs.
 * **For debugging and support:** Isolate logs, config diffs, and source snippets into a focused prompt — no need to paste in your whole project.
 
-Unlike IDE-native assistants that guess behind the scenes, FileKitty lets you **see and shape exactly what the model sees.** You get cleaner inputs, smarter outputs, and fewer wasted tokens.
+Unlike IDE-native assistants that guess behind the scenes, FileKitty lets you **see and shape exactly what the model sees.** You get cleaner inputs,
+smarter outputs, and fewer wasted tokens.
 
 What it lacks in IDE integration, it makes up for in **speed, precision, and higher-quality problem solving.**
-
----
-
-Would you like me to integrate this directly into the full README file now?
-
 
 ---
 
@@ -46,11 +47,11 @@ brew install banagale/filekitty/filekitty
 
 ### Launch the App
 
-- From Terminal:  
+- From Terminal:
   ```bash
   filekitty
   ```
-- Or via Finder:  
+- Or via Finder:
   ```bash
   open /opt/homebrew/opt/filekitty/FileKitty.app
   ```
@@ -86,7 +87,8 @@ Manual builds are useful for development or Linux/Windows adaptation.
 
 ## Example Output
 
-Here’s what FileKitty produces when you drop a folder or select multiple files. The result is a clean, timestamped view of file contents, optionally preceded by a project folder tree.
+Here’s what FileKitty produces when you drop a folder or select multiple files. The result is a clean, timestamped view of file contents, optionally
+preceded by a project folder tree.
 
 Below, we’ve selected three Python files from a project:
 
@@ -139,7 +141,7 @@ SETTINGS_FILE_IGNORE_KEY = "mainOutputIgnoreRegex"
 ...
 ```
 
-# \~/code/…/filekitty/ui/main\_window\.py
+# ~/code/…/filekitty/ui/main_window.py
 
 **Last modified: Jun 5, 2025 12:54 PM**
 
@@ -180,30 +182,65 @@ Access via **FileKitty → Preferences** (`Cmd+,`):
 
 ## Developer & Contributor Guide
 
-### Manual Build
-
-(Also listed above.)
+### Local Setup
 
 ```bash
 git clone https://github.com/banagale/FileKitty.git
 cd FileKitty
 poetry install
-poetry run python setup.py py2app
 ```
 
-The app bundle will be created in `./dist/`.
+* The app can be manually built using:
+
+  ```bash
+  poetry run python setup.py py2app
+  ```
+
+  The resulting `.app` bundle appears in `./dist/`.
+
+* Run the app directly with:
+
+  ```bash
+  poetry run filekitty
+  ```
+
+---
+
+### Prerequisites
+
+Before building or releasing, make sure you have:
+
+* macOS (required for app build)
+* [Poetry](https://python-poetry.org/) installed
+* **Homebrew** - only required for formula validation using filekitty-validate. Must be available in your PATH.
+
+---
+
+### Release & Validation helpers
+
+FileKitty ships two developer tools for publishing new versions:
+
+| Command                         | What it does                                                                                                                                                                                       |
+|---------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `poetry run filekitty-release`  | Interactive release assistant: verifies version consistency, builds the app, zips it, generates a `.sha256`, shows a changelog, tags the release, and outputs GitHub/Homebrew update instructions. |
+| `poetry run filekitty-validate` | Post-release checker: ensures the pushed tag exists, the ZIP file matches the hash, and the Homebrew formula matches the release metadata.                                                         |
+
+> Tip: Add `--dry-run` to simulate the release without making changes.
 
 ---
 
 ### Linting & Formatting
 
-Uses [Ruff](https://docs.astral.sh/ruff/):
+Run linting and formatting tools:
 
 ```bash
-make lint      # Run linter
-make format    # Format code
+make lint
+make format
+```
 
-# or directly
+Or directly with Poetry:
+
+```bash
 poetry run ruff check .
 poetry run ruff format .
 ```
@@ -212,7 +249,7 @@ poetry run ruff format .
 
 ### Pre-commit Hooks
 
-Set up local linting before commits:
+Set up automatic checks before commits:
 
 ```bash
 pre-commit install
@@ -223,10 +260,8 @@ pre-commit run --all-files
 
 ### Continuous Integration
 
-- GitHub Actions validate linting and build on every push
-- See `.github/workflows/` for full pipeline
-
----
+* GitHub Actions validate builds and style checks on each push.
+* See `.github/workflows/` for automation details.
 
 ## License
 
