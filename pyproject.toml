@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "filekitty"
 packages = [{ include = "filekitty", from = "src" }]
-version = "0.2.1"
+version = "custom"
 description = "Select and concatenate file contents, useful for providing context to LLMs and generative AI."
 authors = ["Rob Banagale <rob@banagale.com>"]
 license = "MIT"
