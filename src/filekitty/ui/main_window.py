@@ -174,19 +174,26 @@ class FilePicker(QWidget):
         if not self.include_tree:
             return None
 
-        # base dir precedence:   locked override → global default → commonpath
+        # Decide which directory the tree should start from
         base = (
             self.tree_base_dir.strip()
+            or (str(self.project_root) if self.project_root else "")
             or self.tree_def_base
             or (os.path.commonpath(self.currentFiles) if self.currentFiles else "")
         )
 
-        ignore_regex = self._normalize_pattern(self.tree_ignore_regex.strip() or self.tree_def_ignore)
+        # If `base` is actually a file (happens when only one file was dragged),
+        # use its parent folder so `generate_tree()` receives a directory.
+        if base and Path(base).is_file():
+            base = str(Path(base).parent)
+
+        ignore_raw = self.tree_ignore_regex.strip() or self.tree_def_ignore.strip() or TREE_IGNORE_DEFAULT
+        ignore_regex = self._normalize_pattern(ignore_raw)
+
         if not base:
             return None
         try:
             md_text, snap = self._generate_tree(base, ignore_regex, project_root=self.project_root)
-
             self.current_tree_snapshot = snap
             return snap
         except Exception as e:
