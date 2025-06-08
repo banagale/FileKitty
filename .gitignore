@@ -34,7 +34,7 @@ media/
 
 # dirs
 build/*/*
-dist/*/*
+dist/**/*
 temp/
 temp_*/
 s3_local/
