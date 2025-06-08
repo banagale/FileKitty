@@ -1,4 +1,20 @@
 #!/usr/bin/env python3
+"""
+tools/release.py – One-button (ish) release assistant for FileKitty.
+
+Requirements
+------------
+* poetry
+* git (with write access to origin)
+* gh   (GitHub CLI, authenticated)
+* shasum (macOS builtin)
+
+Typical flow
+------------
+$ poetry run filekitty-release
+"""
+
+from __future__ import annotations
 
 import argparse
 import re
@@ -8,157 +24,215 @@ import sys
 import tomllib
 from pathlib import Path
 
+# ─── Config ────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 HOMEBREW_FORMULA = ROOT.parent / "homebrew-filekitty/Formula/filekitty.rb"
 ZIP_TEMPLATE = "FileKitty-{version}.zip"
+REQUIRED_TOOLS = ["poetry", "git", "gh", "shasum"]
+
+# ─── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def run(cmd, check=True, capture_output=True, text=True):
+def run(cmd: list[str] | str, *, capture: bool = True) -> str:
+    """Run a command; abort on failure."""
+    if isinstance(cmd, str):
+        cmd = cmd.split()
+
     try:
-        return subprocess.run(cmd, check=check, capture_output=capture_output, text=text).stdout.strip()
+        res = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=capture,
+            text=True,
+        )
+        return res.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Command failed: {' '.join(cmd)}")
-        print(e)
-        return None
+        print(f"\n✖ Command failed: {' '.join(cmd)}")
+        if e.stdout:
+            print(e.stdout)
+        if e.stderr:
+            print(e.stderr, file=sys.stderr)
+        sys.exit(1)
 
 
-def local_version():
+def need_tools() -> None:
+    missing = [t for t in REQUIRED_TOOLS if shutil.which(t) is None]
+    if missing:
+        print("✖ Missing required tools:", ", ".join(missing))
+        sys.exit(1)
+
+
+def pyproject_version() -> str:
     with (ROOT / "pyproject.toml").open("rb") as f:
         data = tomllib.load(f)
     return data["tool"]["poetry"]["version"]
 
 
-def latest_git_tag():
-    try:
-        output = run(["git", "tag", "--list", "v*", "--sort=-v:refname"])
-        tag = output.splitlines()[0] if output else None
-        if tag and tag.startswith("v"):
-            return tag[1:]
-        return tag
-    except Exception:
-        return None
+def latest_tag() -> str | None:
+    tag = run(["git", "tag", "--list", "v*", "--sort=-v:refname"])
+    first = tag.splitlines()[0] if tag else None
+    return first[1:] if first and first.startswith("v") else first
 
 
-def brew_formula_version_and_sha():
+def formula_version_sha() -> tuple[str | None, str | None]:
     if not HOMEBREW_FORMULA.exists():
         return None, None
-    content = HOMEBREW_FORMULA.read_text()
-    version_match = re.search(r'url ".+/v(\d+\.\d+\.\d+)\.tar\.gz"', content)
-    sha_match = re.search(r'sha256 "([a-f0-9]{64})"', content)
-    version = version_match.group(1) if version_match else None
-    sha = sha_match.group(1) if sha_match else None
-    return version, sha
+    txt = HOMEBREW_FORMULA.read_text()
+    ver_m = re.search(r'url ".+/v(?P<v>\d+\.\d+\.\d+)/FileKitty-(?P=v)\.zip"', txt)
+    sha_m = re.search(r'sha256 "([a-f0-9]{64})"', txt)
+    return (ver_m.group(1) if ver_m else None, sha_m.group(1) if sha_m else None)
 
 
-def bump_patch(version):
-    parts = version.split(".")
-    if len(parts) != 3:
-        raise ValueError("Expected semver format x.y.z")
-    parts[2] = str(int(parts[2]) + 1)
-    return ".".join(parts)
+def bump_patch(v: str) -> str:
+    major, minor, patch = map(int, v.split("."))
+    return f"{major}.{minor}.{patch + 1}"
 
 
-def tag_git_version(version, dry_run=False):
-    tag = f"v{version}"
-    if dry_run:
-        print(f"(dry run) Would tag repo with {tag} and push")
-    else:
-        print(f"Tagging and pushing {tag}... (this may take a moment)")
-        run(["git", "tag", tag])
-        run(["git", "push", "origin", tag])
-        print(f"✔ Tagged and pushed {tag}")
+# ─── Mutating helpers (abort on failure) ───────────────────────────────────────
 
 
-def build_app_bundle(dry_run=False):
-    if dry_run:
-        print("(dry run) Would build app using setup.py py2app")
+def git_commit_file(path: Path, msg: str) -> None:
+    run(["git", "add", str(path)])
+    run(["git", "commit", "-m", msg])
+    run(["git", "push"])
+
+
+def set_pyproject_version(v: str) -> None:
+    p = ROOT / "pyproject.toml"
+    lines = p.read_text().splitlines()
+    new = [f'version = "{v}"' if ln.startswith("version = ") else ln for ln in lines]
+    p.write_text("\n".join(new) + "\n")
+    git_commit_file(p, f"chore: bump version to {v}")
+    print(f"✔ pyproject.toml -> {v}")
+
+
+def create_tag(v: str) -> None:
+    tag = f"v{v}"
+    existing = run(["git", "tag"])
+    if tag in existing.splitlines():
+        print(f"✔ Tag {tag} already exists")
         return
-    print("Building .app bundle with py2app... (this may take a moment)")
-    run([sys.executable, "setup.py", "py2app"])
-    print("✔ App built")
+    run(["git", "tag", tag])
+    run(["git", "push", "origin", tag])
+    print(f"✔ Pushed git tag {tag}")
 
 
-def create_zip(version, dry_run=False):
-    app_path = DIST / "FileKitty.app"
-    zip_path = DIST / ZIP_TEMPLATE.format(version=version)
-    if dry_run:
-        print(f"(dry run) Would zip {app_path} to {zip_path}")
-        return zip_path
-    if not app_path.exists():
-        raise FileNotFoundError("App bundle not found at dist/FileKitty.app")
-    if zip_path.exists():
-        zip_path.unlink()
-    print(f"Zipping app bundle to {zip_path}...")
-    shutil.make_archive(str(zip_path).removesuffix(".zip"), "zip", DIST, "FileKitty.app")
-    print(f"✔ Created zip at {zip_path}")
-    return zip_path
+def build_app() -> None:
+    run(["poetry", "run", "python", "setup.py", "py2app"])
+    print("✔ Built FileKitty.app")
 
 
-def calculate_sha256(zip_path):
-    print("Calculating sha256...")
-    sha = run(["shasum", "-a", "256", str(zip_path)])
-    if not sha:
-        raise RuntimeError("Failed to calculate sha256")
-    return sha.split()[0]
+def archive_app(v: str) -> Path:
+    dst = DIST / ZIP_TEMPLATE.format(version=v)
+    if dst.exists():
+        dst.unlink()
+    shutil.make_archive(str(dst).removesuffix(".zip"), "zip", DIST, "FileKitty.app")
+    print(f"✔ Archived app -> {dst.name}")
+    return dst
 
 
-def print_instructions(version, sha256):
-    url = f"https://github.com/banagale/FileKitty/releases/download/v{version}/FileKitty-{version}.zip"
-    print("\n---")
-    print("Homebrew formula block:")
-    print(f'  url "{url}"')
-    print(f'  sha256 "{sha256}"')
-    print("---\n")
-    print("GitHub release steps:")
-    print(f"  1. Create a new release for tag `v{version}` on GitHub.")
-    print(f"  2. Upload: dist/FileKitty-{version}.zip")
-    print("  3. Paste Homebrew formula block above into homebrew-filekitty/Formula/filekitty.rb")
-    print("---\n")
+def sha256(path: Path) -> str:
+    digest = run(["shasum", "-a", "256", str(path)]).split()[0]
+    print(f"✔ SHA-256: {digest}")
+    return digest
 
 
-def main():
+def update_formula(v: str, digest: str) -> None:
+    repo_root = run(["git", "-C", str(HOMEBREW_FORMULA.parent.parent), "rev-parse", "--show-toplevel"])
+    txt = HOMEBREW_FORMULA.read_text()
+    txt = re.sub(
+        r'url ".+/v\d+\.\d+\.\d+/FileKitty-\d+\.\d+\.\d+\.zip"',
+        f'url "https://github.com/banagale/FileKitty/releases/download/v{v}/FileKitty-{v}.zip"',
+        txt,
+    )
+    txt = re.sub(r'sha256 "[a-f0-9]{64}"', f'sha256 "{digest}"', txt)
+    HOMEBREW_FORMULA.write_text(txt)
+    run(["git", "-C", repo_root, "add", str(HOMEBREW_FORMULA)])
+    run(["git", "-C", repo_root, "commit", "-m", f"formula: FileKitty {v}"])
+    run(["git", "-C", repo_root, "push"])
+    print("✔ Homebrew formula updated & pushed")
+
+
+def gh_release(v: str, asset: Path) -> None:
+    tag = f"v{v}"
+    run(
+        [
+            "gh",
+            "release",
+            "create",
+            tag,
+            str(asset),
+            "--title",
+            tag,
+            "--notes",
+            f"FileKitty {tag} release (automated).",
+            "--verify-tag",
+        ]
+    )
+    print("✔ GitHub release published")
+
+
+# ─── Main entry ────────────────────────────────────────────────────────────────
+
+
+def main() -> None:
+    need_tools()
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dry-run", action="store_true", help="Simulate release process without making changes")
+    parser.add_argument("--dry-run", action="store_true", help="Do everything but write")
     args = parser.parse_args()
 
-    pyproject_ver = local_version()
-    git_tag = latest_git_tag()
-    brew_ver, brew_sha = brew_formula_version_and_sha()
+    pv = pyproject_version()
+    tv = latest_tag()
+    fv, _ = formula_version_sha()
 
-    print(f"Local version : {pyproject_ver}")
-    print(f"Latest tag    : {git_tag or '(none)'}")
-    print(f"Brew formula  : {brew_ver or '(none)'}")
+    print(f"Local version : {pv}")
+    print(f"Latest tag    : {tv or '(none)'}")
+    print(f"Brew formula  : {fv or '(none)'}\n")
 
-    if pyproject_ver == git_tag == brew_ver:
-        suggested = bump_patch(pyproject_ver)
-        print(f"✔ All sources in sync. Suggested next version: {suggested}")
-        user_input = input(f"Use version {suggested}? [Y/n/custom]: ").strip()
-        if not user_input or user_input.lower() == "y":
-            next_ver = suggested
-        elif user_input.lower() == "n":
-            print("Aborted by user.")
+    if pv == tv == fv:
+        default_next = bump_patch(pv)
+        ans = input(f"Suggested next version is {default_next}. Accept? [Y/n/custom] ").strip().lower()
+        if ans in ("", "y"):
+            next_ver = default_next
+        elif ans == "n":
+            print("Aborted.")
             return
         else:
-            next_ver = user_input.strip()
-        print(f"Proceeding with version: {next_ver}")
-        tag_git_version(next_ver, dry_run=args.dry_run)
-        build_app_bundle(dry_run=args.dry_run)
-        zip_path = create_zip(next_ver, dry_run=args.dry_run)
-        if not args.dry_run:
-            sha256 = calculate_sha256(zip_path)
-            print_instructions(next_ver, sha256)
-        else:
-            print("(dry run) Skipping sha256 + instructions.")
+            next_ver = ans
     else:
-        print("✖ Version mismatch detected:")
-        if pyproject_ver != git_tag:
-            print(f"  - pyproject.toml ({pyproject_ver}) != git tag ({git_tag})")
-        if brew_ver and pyproject_ver != brew_ver:
-            print(f"  - pyproject.toml ({pyproject_ver}) != Homebrew formula ({brew_ver})")
-        print("Please resolve before proceeding with a release.")
+        print("⚠️ Versions mismatch; continuing with pyproject version.")
+        next_ver = pv
+
+    if args.dry_run:
+        print(f"\n(dry-run) Would release version {next_ver}")
         return
+
+    # 1. pyproject version
+    set_pyproject_version(next_ver)
+    # 2. tag
+    create_tag(next_ver)
+    # 3. build + zip
+    build_app()
+    zip_path = archive_app(next_ver)
+    digest = sha256(zip_path)
+    # 4. brew & GitHub
+    update_formula(next_ver, digest)
+    gh_release(next_ver, zip_path)
+
+    # ─── Summary ──────────────────────────────────────────────────────────────
+    print(
+        f"\n🎉 Release {next_ver} done!\n"
+        f"  Homebrew stanza:\n"
+        f'    url "https://github.com/banagale/FileKitty/releases/download/v{next_ver}/FileKitty-{next_ver}.zip"\n'
+        f'    sha256 "{digest}"\n'
+    )
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n✖ Interrupted by user")
+        sys.exit(1)
