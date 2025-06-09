@@ -1,30 +1,17 @@
 #!/usr/bin/env python3
-"""
-tools/release.py – one-stop (interactive) release assistant for **FileKitty**
+# tools/release.py ── One-shot release helper for FileKitty
+#
+#   • bumps version in pyproject.toml
+#   • tags & pushes    (git)
+#   • builds           (py2app)
+#   • zips + writes .sha256
+#   • uploads release  (gh)
+#   • edits + commits homebrew-filekitty formula
+#
+# Requirements:  git, poetry, gh (logged-in), shasum
+# Usage:  poetry run filekitty-release [--dry-run]
+# ---------------------------------------------------------------------------
 
-What it does – when *not* in --dry-run:
-①   bumps *pyproject.toml* version, commits + pushes
-②   tags the repo and pushes the tag (skips if tag already exists)
-③   builds the `.app` bundle with py2app
-④   zips the bundle to dist/FileKitty-vX.Y.Z.zip
-⑤   calculates SHA-256
-⑥   edits *homebrew-filekitty* formula, commits + pushes
-⑦   creates a GitHub release (via `gh`) and uploads the ZIP
-
-Requirements
-------------
-* git  – repo must be clean and on a branch that can push to *origin*
-* poetry
-* gh   – authenticated ( `gh auth status` should be green )
-* shasum (macOS default)
-
-Usage
------
-poetry run filekitty-release           # full run
-poetry run filekitty-release --dry-run # tell me what you *would* do
-"""
-
-from __future__ import annotations
 
 import argparse
 import re
@@ -34,26 +21,24 @@ import sys
 import tomllib
 from pathlib import Path
 
-# ── config ────────────────────────────────────────────────────────────────────
+# --- Paths & constants -------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
-TAP_FORMULA = ROOT.parent / "homebrew-filekitty/Formula/filekitty.rb"
-ZIP_TEMPLATE = "FileKitty-v{version}.zip"
+FORMULA_PATH = ROOT.parent / "homebrew-filekitty/Formula/filekitty.rb"
 REPO = "banagale/FileKitty"
-NEEDED_TOOLS = ["git", "poetry", "gh", "shasum"]
+ZIP_TEMPLATE = "FileKitty-{ver}.zip"  # ⚠ no “v” prefix → matches formula
+REQUIRED_TOOLS = ["git", "poetry", "gh", "shasum"]
 
-# ── helpers ───────────────────────────────────────────────────────────────────
 
-
-def run(cmd: list[str] | str, *, capture: bool = True) -> str:
-    """Run a subprocess, exit on failure, return stdout."""
+# --- Utility wrappers --------------------------------------------------------
+def run(cmd: list[str] | str, *, capture: bool = True, check: bool = True) -> str:
     if isinstance(cmd, str):
         cmd = cmd.split()
     try:
-        res = subprocess.run(cmd, check=True, capture_output=capture, text=True)
+        res = subprocess.run(cmd, check=check, capture_output=capture, text=True)
         return res.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"\n✖ command failed: {' '.join(cmd)}")
+        print(f"\n✖ Command failed: {' '.join(cmd)}")
         if e.stdout:
             print(e.stdout)
         if e.stderr:
@@ -61,189 +46,171 @@ def run(cmd: list[str] | str, *, capture: bool = True) -> str:
         sys.exit(1)
 
 
-def need_tools() -> None:
-    missing = [t for t in NEEDED_TOOLS if shutil.which(t) is None]
+def ensure_tools() -> None:
+    missing = [t for t in REQUIRED_TOOLS if shutil.which(t) is None]
     if missing:
-        print("✖ missing tools:", ", ".join(missing))
+        print("✖ Missing required tools:", ", ".join(missing))
         sys.exit(1)
 
 
-def pyproject_version() -> str:
+# --- Version helpers ---------------------------------------------------------
+def current_pyproject_ver() -> str:
     with (ROOT / "pyproject.toml").open("rb") as f:
-        data = tomllib.load(f)
-    return data["tool"]["poetry"]["version"]
+        return tomllib.load(f)["tool"]["poetry"]["version"]
 
 
-def latest_tag() -> str | None:
-    tags = run(["git", "tag", "--list", "v*", "--sort=-v:refname"])
-    first = tags.splitlines()[0] if tags else None
-    return first[1:] if first and first.startswith("v") else first
+def latest_git_tag() -> str | None:
+    out = run(["git", "tag", "--list", "v*", "--sort=-v:refname"])
+    tag = out.splitlines()[0] if out else None
+    return tag[1:] if tag and tag.startswith("v") else tag
 
 
-FORMULA_URL_RE = re.compile(r'url ".+/v(?P<ver>\d+\.\d+\.\d+)/FileKitty-(?P=ver)\.zip"')
-SHA_RE = re.compile(r'sha256 "([a-f0-9]{64})"')
-
-
-def formula_version_sha() -> tuple[str | None, str | None]:
-    if not TAP_FORMULA.exists():
+def formula_ver_sha() -> tuple[str | None, str | None]:
+    if not FORMULA_PATH.exists():
         return None, None
-    txt = TAP_FORMULA.read_text()
-    ver = FORMULA_URL_RE.search(txt)
-    sha = SHA_RE.search(txt)
-    return (ver.group("ver") if ver else None, sha.group(1) if sha else None)
+    txt = FORMULA_PATH.read_text()
+    ver_m = re.search(r'url ".+/v(?P<ver>\d+\.\d+\.\d+)/FileKitty-(?P=ver)\.zip"', txt)
+    sha_m = re.search(r'sha256 "([a-f0-9]{64})"', txt)
+    return (ver_m.group("ver") if ver_m else None, sha_m.group(1) if sha_m else None)
 
 
-def bump_patch(version: str) -> str:
-    major, minor, patch = map(int, version.split("."))
+def bump_patch(ver: str) -> str:
+    major, minor, patch = map(int, ver.split("."))
     return f"{major}.{minor}.{patch + 1}"
 
 
-# ── git / fs mutators ────────────────────────────────────────────────────────
+# --- Simple git helpers ------------------------------------------------------
+def git_has_changes(path: Path) -> bool:
+    return run(["git", "diff", "--quiet", "--", str(path)], check=False) != ""
 
 
-def git_commit(path: Path | str, msg: str) -> None:
-    run(["git", "add", str(path)])
-    run(["git", "commit", "-m", msg])
-    run(["git", "push"])
+def git_add_commit_push(path: Path, msg: str) -> None:
+    if git_has_changes(path):
+        run(["git", "add", str(path)])
+        run(["git", "commit", "-m", msg])
+        run(["git", "push"])
+        print(f"✔ Git commit: {msg}")
+    else:
+        print("✔ No changes to commit.")
 
 
+# --- Release steps -----------------------------------------------------------
 def set_pyproject_version(new: str) -> None:
     pp = ROOT / "pyproject.toml"
     txt = pp.read_text().splitlines()
     txt = [f'version = "{new}"' if line.startswith("version = ") else line for line in txt]
     pp.write_text("\n".join(txt) + "\n")
-    git_commit(pp, f"chore(release): bump version to {new}")
-    print(f"✔ pyproject.toml set to {new}")
+    git_add_commit_push(pp, f"chore(release): bump version to {new}")
 
 
-def tag_repo(ver: str) -> None:
+def create_tag(ver: str) -> None:
     tag = f"v{ver}"
-    existing = run(["git", "tag"])
-    if tag in existing.split():
-        print(f"✔ git tag {tag} already exists")
+    if tag in run(["git", "tag"]).split():
+        print(f"✔ Tag {tag} already exists")
         return
     run(["git", "tag", tag])
     run(["git", "push", "origin", tag])
-    print(f"✔ pushed git tag {tag}")
+    print(f"✔ Pushed tag {tag}")
 
 
 def build_app() -> None:
     run(["poetry", "run", "python", "setup.py", "py2app"])
-    print("✔ built FileKitty.app")
+    print("✔ Built FileKitty.app")
 
 
-def zip_app(ver: str) -> Path:
-    dst = DIST / ZIP_TEMPLATE.format(version=ver)
-    if dst.exists():
-        dst.unlink()
-    shutil.make_archive(str(dst).removesuffix(".zip"), "zip", DIST, "FileKitty.app")
-    print(f"✔ archived to {dst.name}")
-    return dst
+def make_zip(ver: str) -> Path:
+    DIST.mkdir(exist_ok=True)
+    z = DIST / ZIP_TEMPLATE.format(ver=ver)
+    if z.exists():
+        z.unlink()
+    shutil.make_archive(str(z).removesuffix(".zip"), "zip", DIST, "FileKitty.app")
+    print(f"✔ Zipped → {z.name}")
+    return z
 
 
-def sha256(path: Path) -> str:
-    digest = run(["shasum", "-a", "256", str(path)]).split()[0]
-    print(f"✔ sha256 = {digest}")
-    return digest
+def write_sha_file(zip_path: Path) -> Path:
+    digest = run(["shasum", "-a", "256", str(zip_path)]).split()[0]
+    sha_path = zip_path.with_suffix(".zip.sha256")
+    sha_path.write_text(f"{digest}  {zip_path.name}\n")
+    print(f"✔ sha256 → {sha_path.name}")
+    return sha_path
 
 
 def update_formula(ver: str, digest: str) -> None:
-    if not TAP_FORMULA.exists():
-        print("✖ homebrew formula not found; skipping")
-        return
-    repo_root = run(["git", "-C", str(TAP_FORMULA.parent.parent), "rev-parse", "--show-toplevel"])
-    txt = TAP_FORMULA.read_text()
-    txt = FORMULA_URL_RE.sub(f'url "https://github.com/{REPO}/releases/download/v{ver}/FileKitty-{ver}.zip"', txt)
-    txt = SHA_RE.sub(f'sha256 "{digest}"', txt)
-    TAP_FORMULA.write_text(txt)
-    run(["git", "-C", repo_root, "add", str(TAP_FORMULA)])
-    run(["git", "-C", repo_root, "commit", "-m", f"filekitty {ver}"])
-    run(["git", "-C", repo_root, "push"])
-    print("✔ homebrew formula updated & pushed")
-
-
-def gh_release(ver: str, asset: Path) -> None:
-    tag = f"v{ver}"
-    run(
-        [
-            "gh",
-            "release",
-            "create",
-            tag,
-            str(asset),
-            "--title",
-            tag,
-            "--notes",
-            f"FileKitty {tag} automated release",
-            "--verify-tag",
-        ]
+    if not FORMULA_PATH.exists():
+        print("✖ Formula file missing.")
+        sys.exit(1)
+    repo_root = run(["git", "-C", str(FORMULA_PATH.parent.parent), "rev-parse", "--show-toplevel"])
+    txt = FORMULA_PATH.read_text()
+    txt = re.sub(
+        r'url ".+/v\d+\.\d+\.\d+/FileKitty-\d+\.\d+\.\d+\.zip"',
+        f'url "https://github.com/{REPO}/releases/download/v{ver}/FileKitty-{ver}.zip"',
+        txt,
     )
+    txt = re.sub(r'sha256 "[a-f0-9]{64}"', f'sha256 "{digest}"', txt)
+    FORMULA_PATH.write_text(txt)
+    run(["git", "-C", repo_root, "add", str(FORMULA_PATH)])
+    run(["git", "-C", repo_root, "commit", "-m", f"formula: FileKitty {ver}"])
+    run(["git", "-C", repo_root, "push"])
+    print("✔ Homebrew formula updated")
+
+
+def gh_release(ver: str, asset: Path, notes: str) -> None:
+    tag = f"v{ver}"
+    size_mb = asset.stat().st_size / (1024 * 1024)
+    print(f"⏳ Uploading {asset.name} ({size_mb:.1f} MB) to GitHub release… please wait.")
+    run(["gh", "release", "create", tag, str(asset), "--title", tag, "--notes", notes, "--verify-tag"])
     print("✔ GitHub release published")
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
-
-
+# --- Main --------------------------------------------------------------------
 def main() -> None:
-    need_tools()
+    ensure_tools()
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dry-run", action="store_true", help="print what would happen, do nothing")
+    ap.add_argument("--dry-run", action="store_true", help="simulate only")
     args = ap.parse_args()
 
-    pv = pyproject_version()
-    tv = latest_tag()
-    fv, _ = formula_version_sha()
+    pv = current_pyproject_ver()
+    tv = latest_git_tag()
+    fv, _ = formula_ver_sha()
 
-    print(f"Local version : {pv}")
-    print(f"Latest tag    : {tv or '(none)'}")
-    print(f"Homebrew      : {fv or '(none)'}\n")
+    print(f"pyproject  : {pv}")
+    print(f"last tag   : {tv or '(none)'}")
+    print(f"formula    : {fv or '(none)'}")
 
-    # decide next version
+    # Decide next version -----------------------------------------------------
     if pv == tv == fv:
-        default = bump_patch(pv)
-        ans = input(f"next version → {default}   [Y/n/custom] : ").strip().lower()
-        if ans in ("", "y"):
-            next_ver = default
-        elif ans == "n":
-            print("aborted.")
-            return
-        elif ans == "custom":
-            next_ver = input("enter custom semver: ").strip()
-        else:
-            next_ver = ans
+        nxt_default = bump_patch(pv)
+        ans = input(f"Next version [{nxt_default}]: ").strip()
+        next_ver = ans or nxt_default
     else:
-        print("⚠ versions differ; proceeding with pyproject version")
+        print("⚠ Version mismatch among sources.")
+        ans = input(f"Proceed with pyproject version ({pv})? [y/N] ").lower()
+        if ans != "y":
+            sys.exit(1)
         next_ver = pv
-        if input("continue? [y/N] ").strip().lower() != "y":
-            print("aborted.")
-            return
 
     if args.dry_run:
-        print(f"\n(dry-run) would release {next_ver}")
+        print(f"(dry-run) would release {next_ver}")
         return
 
-    # ── release steps ────────────────────────────────────────────────────────
-    print("\n— RELEASE START —")
-    set_pyproject_version(next_ver)  # 1
-    tag_repo(next_ver)  # 2
-    build_app()  # 3
-    zip_path = zip_app(next_ver)  # 4
-    digest = sha256(zip_path)  # 5
-    update_formula(next_ver, digest)  # 6
-    gh_release(next_ver, zip_path)  # 7
-    print("— RELEASE DONE  —")
+    # Actual release ----------------------------------------------------------
+    set_pyproject_version(next_ver)
+    create_tag(next_ver)
+    build_app()
+    zip_path = make_zip(next_ver)
+    sha256_path = write_sha_file(zip_path)
+    sha_val = sha256_path.read_text().split()[0]
+    update_formula(next_ver, sha_val)
+    gh_release(next_ver, zip_path, f"FileKitty {next_ver} automated release")
 
-    print(
-        "\n🍻 Homebrew stanza for manual review:\n"
-        f'  url "https://github.com/{REPO}/releases/download/v{next_ver}/FileKitty-{next_ver}.zip"\n'
-        f'  sha256 "{digest}"\n'
-    )
+    print("\n🎉 Done!  Homebrew can now be updated after CI bots pick up the formula.")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n✖ interrupted")
+        print("\n✖ Interrupted")
         sys.exit(1)
