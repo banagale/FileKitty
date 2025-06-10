@@ -23,7 +23,7 @@ APP = ["src/filekitty/__main__.py"]
 
 OPTIONS = {
     "argv_emulation": False,
-    "packages": ["PyQt5"],
+    "packages": ["PyQt5", "filekitty"],
     "iconfile": str(ICON),
     "plist": {
         "CFBundleIdentifier": f"com.banagale.{PKG_NAME}",
