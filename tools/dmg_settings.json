@@ -1,25 +1,25 @@
 {
   "title": "FileKitty",
   "background": "src/filekitty/resources/dmg_background/dmg_background.png",
-  "icon-size": 100,
+  "icon-size": 120,
   "window": {
     "size": {
-      "width": 520,
-      "height": 360
+      "width": 700,
+      "height": 400
     }
   },
   "contents": [
     {
-      "x": 130,
-      "y": 180,
       "type": "file",
-      "path": "dist/FileKitty.app"
+      "path": "FileKitty.app",
+      "x": 200,
+      "y": 100
     },
     {
-      "x": 380,
-      "y": 180,
       "type": "link",
-      "path": "/Applications"
+      "path": "/Applications",
+      "x": 500,
+      "y": 100
     }
   ]
 }
