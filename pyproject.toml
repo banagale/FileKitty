@@ -17,6 +17,7 @@ rich = "^13"
 py2app = "^0.28.7"
 ruff = "^0.9.6"
 pre-commit = "^4.1.0"
+dmgbuild = "^1.6.5"
 
 [build-system]
 requires = ["setuptools", "wheel"]
@@ -31,8 +32,8 @@ path = "src/filekitty/resources/icon"
 filekitty = "filekitty.app_logic:main"
 format = "tools.format:main"
 filekitty-release = "tools.release:main"
-filekitty-validate = "tools.validate_release:main"
-
+filekitty-validate = "tools.packaging.validate_release:main"
+filekitty-sign = "tools.packaging.sign_and_notarize:main"
 
 [tool.ruff]
 line-length = 120
