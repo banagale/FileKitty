@@ -12,14 +12,14 @@
     {
       "type": "file",
       "path": "FileKitty.app",
-      "x": 200,
-      "y": 100
+      "x": 160,
+      "y": 140
     },
     {
       "type": "link",
       "path": "/Applications",
-      "x": 500,
-      "y": 100
+      "x": 530,
+      "y": 140
     }
   ]
 }

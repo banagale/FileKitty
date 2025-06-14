@@ -10,13 +10,13 @@ import json
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 # --------------------------------------------------------------------------- #
 # Paths
 # --------------------------------------------------------------------------- #
-ROOT = Path(__file__).resolve().parents[2]  # tools/packaging/ → project root
+ROOT = Path(__file__).resolve().parents[2]  # project root
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 STAGING = BUILD / "FileKitty-Staging"
@@ -33,11 +33,23 @@ NOTARY_PROFILE = "NotaryProfile"
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def run(cmd: Sequence[str] | str, *, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess[str]:
+def run(
+    cmd: Sequence[str] | str,
+    *,
+    check: bool = True,
+    capture: bool = False,
+    cwd: None | Path = None,
+) -> subprocess.CompletedProcess[str]:
     if isinstance(cmd, str):
         cmd = [cmd]
     print("$", " ".join(map(str, cmd)))
-    return subprocess.run([str(c) for c in cmd], check=check, text=True, capture_output=capture)
+    return subprocess.run(
+        [str(c) for c in cmd],
+        check=check,
+        text=True,
+        capture_output=capture,
+        cwd=str(cwd) if cwd else None,
+    )
 
 
 def developer_id_hash() -> str:
@@ -65,14 +77,16 @@ def sign_binaries_inside_out(app: Path) -> None:
     if not ENTITLEMENTS.exists():
         sys.exit(f"✖ Missing entitlements: {ENTITLEMENTS}")
 
-    machos = sorted(
-        (p for p in app.rglob("*") if p.is_file() and is_macho(p)), key=lambda p: len(p.parts), reverse=True
+    binaries = sorted(
+        (p for p in app.rglob("*") if p.is_file() and is_macho(p)),
+        key=lambda p: len(p.parts),
+        reverse=True,
     )
-    for binary in machos:
+    for bin_path in binaries:
         cmd = ["codesign", "--force", "--options", "runtime", "--timestamp"]
-        if binary == LAUNCHER:
+        if bin_path == LAUNCHER:
             cmd += ["--entitlements", str(ENTITLEMENTS)]
-        cmd += ["--sign", CERT_ID, str(binary)]
+        cmd += ["--sign", CERT_ID, str(bin_path)]
         run(cmd)
 
 
@@ -99,10 +113,7 @@ def verify_local_signature(app: Path) -> None:
 
 def gatekeeper_warn_only(app: Path) -> None:
     res = run(["spctl", "-vvv", "--assess", "--type", "exec", str(app)], check=False, capture=True)
-    if res.returncode == 0:
-        print("🔒  Gatekeeper: accepted (already notarized)")
-    else:
-        print("🔒  Gatekeeper: rejected (expected — not yet notarized)")
+    print("🔒  Gatekeeper:", "accepted" if res.returncode == 0 else "rejected (pre-notarization)")
 
 
 # --------------------------------------------------------------------------- #
@@ -135,12 +146,17 @@ def create_dmg(settings: dict, *, skip_sign: bool, skip_notarize: bool) -> None:
     sign_outer_bundle(staged_app)
     verify_local_signature(staged_app)
 
-    if (STAGING / "Applications").exists():
-        (STAGING / "Applications").unlink()
+    # Remove accidental "Applications" symlink (rare)
+    applink = STAGING / "Applications"
+    if applink.exists():
+        applink.unlink()
 
     background_abs = (ROOT / settings["background"]).resolve()
+    if not background_abs.exists():
+        sys.exit(f"✖ Background PNG not found: {background_abs}")
 
-    args = [
+    # -------------------------- create-dmg args --------------------------- #
+    args: list[str] = [
         "create-dmg",
         "--volname",
         settings["title"],
@@ -151,7 +167,6 @@ def create_dmg(settings: dict, *, skip_sign: bool, skip_notarize: bool) -> None:
         str(settings["window"]["size"]["height"]),
         "--icon-size",
         str(settings["icon-size"]),
-        "--skip-jenkins",
     ]
 
     if "pos" in settings["window"]:
@@ -169,7 +184,9 @@ def create_dmg(settings: dict, *, skip_sign: bool, skip_notarize: bool) -> None:
         args += ["--notarize", NOTARY_PROFILE]
 
     args += [str(DMG_PATH), str(STAGING)]
-    run(args)
+
+    # Critical change: run from ROOT, not STAGING
+    run(args, cwd=ROOT)
 
 
 # --------------------------------------------------------------------------- #
