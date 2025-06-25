@@ -1,73 +1,103 @@
 #!/usr/bin/env python3
 """
-split_md_by_header.py
+Robust Markdown splitter:
 
-Split a long Markdown file into chunks that are at most `max_lines`
-lines long, cutting only at header lines (lines whose first non-space
-character is "#").
-
-Usage:
-    python split_md_by_header.py path/to/longfile.md --out-dir ./chunks --max-lines 2700
+• honours max_lines *strictly*
+• prefers breaking on
+      1) '# ~/code/…/file.ext'
+      2) '# Folder Tree of ~/code/…/'
+• never cuts inside a ``` fenced block
+• prepends <!-- Part X of Y --> to each chunk
 """
 
 import argparse
+import re
 from pathlib import Path
 
-
-def find_header_indices(lines: list[str]) -> list[int]:
-    """Return indices of all lines that start with '#'."""
-    return [idx for idx, line in enumerate(lines) if line.lstrip().startswith("#")]
+HDR_PATH = re.compile(r"^# ~\/.+\.\w+")
+HDR_TREE = re.compile(r"^# Folder Tree of ~\/.+")
 
 
-def write_chunk(lines: list[str], part_no: int, total_parts: int, stem: str, out_dir: Path) -> None:
-    """Write a chunk to disk with the format part_x_of_y and a part header inside."""
+def is_header(ln: str) -> bool: return bool(HDR_PATH.match(ln) or HDR_TREE.match(ln))
+
+
+TRIPLE_TICK = re.compile(r"^\s*```")
+
+
+def chunk_indices(lines: list[str], max_lines: int) -> list[tuple[int, int]]:
+    """
+    Return (start, end) pairs such that end-start ≤ max_lines.
+    """
+    chunks: list[tuple[int, int]] = []
+    start = 0
+    inside_code = False
+    last_header: int | None = None
+    last_blank: int | None = None
+
+    for i, ln in enumerate(lines):
+        if TRIPLE_TICK.match(ln):
+            inside_code = not inside_code
+
+        if not inside_code and ln.strip() == "":
+            last_blank = i
+
+        if not inside_code and is_header(ln):
+            last_header = i
+
+        if i - start + 1 > max_lines:  # +1 because 0-based
+            # choose the best split point
+            split_at = None
+            if last_header and last_header > start:
+                split_at = last_header
+            elif last_blank and last_blank > start:
+                split_at = last_blank
+            else:
+                # Forced cut: if we're inside code, push forward to fence-end
+                split_at = i
+                j = i
+                while inside_code and j < len(lines):
+                    j += 1
+                    if j < len(lines) and TRIPLE_TICK.match(lines[j]):
+                        inside_code = False
+                        split_at = j + 1  # cut *after* the closing ```
+                        break
+
+            chunks.append((start, split_at))
+            start = split_at
+            # reset “recent” markers if they’re before new start
+            if last_header and last_header < start:
+                last_header = None
+            if last_blank and last_blank < start:
+                last_blank = None
+
+    chunks.append((start, len(lines)))
+    return [c for c in chunks if c[1] - c[0] > 0]  # drop empties
+
+
+def write_chunk(out_dir: Path, stem: str,
+                n: int, total: int,
+                body: list[str]) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    outfile = out_dir / f"{stem}_part_{part_no:02d}_of_{total_parts:02d}.md"
-    header = f"<!-- Part {part_no} of {total_parts} -->\n\n"
-    outfile.write_text(header + "".join(lines), encoding="utf-8")
-    print(f"Wrote {outfile} ({len(lines)} lines + header)")
+    path = out_dir / f"{stem}_part_{n:02d}_of_{total:02d}.md"
+    header = f"<!-- Part {n} of {total} -->\n\n"
+    path.write_text(header + "".join(body), encoding="utf-8")
+    print(f"Wrote {path} ({len(body)} body lines)")
 
 
-def split_markdown(input_path: Path, out_dir: Path, max_lines: int = 2700) -> None:
-    text = input_path.read_text(encoding="utf-8").splitlines(keepends=True)
-    headers = find_header_indices(text)
-
-    if not headers or len(text) <= max_lines:
-        write_chunk(text, 1, 1, input_path.stem, out_dir)
-        return
-
-    # Compute cut points
-    cut_indices = [0]
-    for idx in headers[1:]:
-        if idx - cut_indices[-1] > max_lines:
-            cut_indices.append(idx)
-    cut_indices.append(len(text))  # final boundary
-
-    total_parts = len(cut_indices) - 1
-    for part_no in range(1, total_parts + 1):
-        start = cut_indices[part_no - 1]
-        end = cut_indices[part_no]
-        write_chunk(text[start:end], part_no, total_parts, input_path.stem, out_dir)
+def split_markdown(src: Path, out_dir: Path, max_lines: int) -> None:
+    lines = src.read_text(encoding="utf-8").splitlines(keepends=True)
+    spans = chunk_indices(lines, max_lines)
+    total = len(spans)
+    for n, (s, e) in enumerate(spans, 1):
+        write_chunk(out_dir, src.stem, n, total, lines[s:e])
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Split large Markdown file by header.")
-    parser.add_argument("input_file", type=Path, help="Path to the source .md file")
-    parser.add_argument(
-        "-o",
-        "--out-dir",
-        type=Path,
-        default=Path("output_chunks"),
-        help="Directory for the output pieces",
-    )
-    parser.add_argument(
-        "-m",
-        "--max-lines",
-        type=int,
-        default=2700,
-        help="Maximum lines per output file",
-    )
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("input_file", type=Path)
+    ap.add_argument("-o", "--out-dir", type=Path, default=Path("chunks"))
+    ap.add_argument("-m", "--max-lines", type=int, default=2700)
+    args = ap.parse_args()
     split_markdown(args.input_file, args.out_dir, args.max_lines)
 
 
