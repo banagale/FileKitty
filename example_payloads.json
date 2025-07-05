@@ -1,0 +1,242 @@
+{
+  "examples": {
+    "process_files_request": {
+      "action": "process_files",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:30:00Z",
+      "payload": {
+        "files": [
+          "/Users/rob/code/FileKitty/src/filekitty/models.py",
+          "/Users/rob/code/FileKitty/src/filekitty/app_logic.py"
+        ],
+        "selection_state": {
+          "mode": "All Files",
+          "selected_file": null,
+          "selected_items": []
+        },
+        "settings": {
+          "include_tree": true,
+          "tree_base_dir": "/Users/rob/code/FileKitty",
+          "tree_ignore_regex": "\\.git|\\.pyc|\\.DS_Store",
+          "include_date_modified": true,
+          "auto_copy": false,
+          "use_llm_timestamp": false
+        }
+      }
+    },
+    "process_files_response": {
+      "action": "process_files",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:30:02Z",
+      "success": true,
+      "payload": {
+        "prompt_session": {
+          "id": "550e8400-e29b-41d4-a716-446655440000",
+          "timestamp": "2025-07-05T14:30:00Z",
+          "files": [
+            "/Users/rob/code/FileKitty/src/filekitty/models.py",
+            "/Users/rob/code/FileKitty/src/filekitty/app_logic.py"
+          ],
+          "file_metadata": [
+            {
+              "path": "/Users/rob/code/FileKitty/src/filekitty/models.py",
+              "display_path": "src/filekitty/models.py",
+              "is_text_file": true,
+              "language": "python",
+              "last_modified": "2025-07-05T14:25:00Z",
+              "file_hash": "abc123def456789012345678901234567890abcdef123456789012345678901234",
+              "size_bytes": 5432
+            },
+            {
+              "path": "/Users/rob/code/FileKitty/src/filekitty/app_logic.py",
+              "display_path": "src/filekitty/app_logic.py",
+              "is_text_file": true,
+              "language": "python",
+              "last_modified": "2025-07-05T12:00:00Z",
+              "file_hash": "def456789012345678901234567890abcdef123456789012345678901234567890",
+              "size_bytes": 2048
+            }
+          ],
+          "selection_state": {
+            "mode": "All Files",
+            "selected_file": null,
+            "selected_items": []
+          },
+          "project_root": "/Users/rob/code/FileKitty",
+          "tree_snapshot": {
+            "base_path": "/Users/rob/code/FileKitty",
+            "base_path_display": "FileKitty/",
+            "ignore_regex": "\\.git|\\.pyc|\\.DS_Store",
+            "rendered": "# Folder Tree of FileKitty/\\n\\n```text\\nFileKitty/\\n├── src/\\n│   └── filekitty/\\n│       ├── models.py\\n│       ├── app_logic.py\\n│       └── __init__.py\\n├── README.md\\n└── pyproject.toml\\n```"
+          },
+          "output_text": "# Folder Tree of FileKitty/\\n\\n```text\\nFileKitty/\\n├── src/\\n│   └── filekitty/\\n│       ├── models.py\\n│       ├── app_logic.py\\n│       └── __init__.py\\n├── README.md\\n└── pyproject.toml\\n```\\n\\n# src/filekitty/models.py\\n**Last modified: Jul 05, 2025 2:25 PM PST**\\n\\n```python\\n\"\"\"Data models for FileKitty Swift integration.\"\"\"\\n\\nimport json\\nfrom dataclasses import dataclass, field\\nfrom datetime import datetime\\nfrom typing import Any, Dict, List, Optional\\n\\n\\n@dataclass\\nclass FileMetadata:\\n    \"\"\"Metadata for a single file in the session.\"\"\"\\n    path: str\\n    display_path: str\\n    is_text_file: bool\\n    # ... rest of file content\\n```\\n\\n# src/filekitty/app_logic.py\\n**Last modified: Jul 05, 2025 12:00 PM PST**\\n\\n```python\\nimport sys\\nfrom pathlib import Path\\n\\nfrom PyQt5.QtCore import QEvent, Qt\\nfrom PyQt5.QtWidgets import QApplication\\n\\nfrom filekitty.ui.main_window import FilePicker\\n\\n\\nclass FileKittyApp(QApplication):\\n    # ... rest of file content\\n```",
+          "settings": {
+            "include_tree": true,
+            "tree_base_dir": "/Users/rob/code/FileKitty",
+            "tree_ignore_regex": "\\.git|\\.pyc|\\.DS_Store",
+            "include_date_modified": true,
+            "auto_copy": false,
+            "use_llm_timestamp": false
+          }
+        }
+      }
+    },
+    "get_python_symbols_request": {
+      "action": "get_python_symbols",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:31:00Z",
+      "payload": {
+        "files": [
+          "/Users/rob/code/FileKitty/src/filekitty/models.py",
+          "/Users/rob/code/FileKitty/src/filekitty/app_logic.py"
+        ]
+      }
+    },
+    "get_python_symbols_response": {
+      "action": "get_python_symbols",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:31:01Z",
+      "success": true,
+      "payload": {
+        "symbols": {
+          "/Users/rob/code/FileKitty/src/filekitty/models.py": {
+            "classes": ["FileMetadata", "TreeSnapshot", "SelectionState", "PromptSession"],
+            "functions": []
+          },
+          "/Users/rob/code/FileKitty/src/filekitty/app_logic.py": {
+            "classes": ["FileKittyApp"],
+            "functions": ["main"]
+          }
+        },
+        "errors": []
+      }
+    },
+    "update_selection_request": {
+      "action": "update_selection",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:32:00Z",
+      "payload": {
+        "selection_state": {
+          "mode": "Single File",
+          "selected_file": "/Users/rob/code/FileKitty/src/filekitty/models.py",
+          "selected_items": ["PromptSession", "FileMetadata"]
+        }
+      }
+    },
+    "update_selection_response": {
+      "action": "update_selection",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:32:01Z",
+      "success": true,
+      "payload": {
+        "output_text": "# Folder Tree of FileKitty/\\n\\n```text\\nFileKitty/\\n├── src/\\n│   └── filekitty/\\n│       ├── models.py\\n│       ├── app_logic.py\\n│       └── __init__.py\\n├── README.md\\n└── pyproject.toml\\n```\\n\\n# src/filekitty/models.py\\n**Last modified: Jul 05, 2025 2:25 PM PST**\\n\\n```python\\n@dataclass\\nclass FileMetadata:\\n    \"\"\"Metadata for a single file in the session.\"\"\"\\n    path: str\\n    display_path: str\\n    is_text_file: bool\\n    language: Optional[str] = None\\n    last_modified: Optional[datetime] = None\\n    file_hash: Optional[str] = None\\n    size_bytes: Optional[int] = None\\n\\n\\n@dataclass\\nclass PromptSession:\\n    \"\"\"Complete session state for FileKitty.\"\"\"\\n    id: str\\n    timestamp: datetime\\n    files: List[str]\\n    file_metadata: List[FileMetadata]\\n    selection_state: SelectionState\\n    project_root: Optional[str] = None\\n    tree_snapshot: Optional[TreeSnapshot] = None\\n    output_text: Optional[str] = None\\n    settings: Dict[str, Any] = field(default_factory=dict)\\n    # ... methods omitted for brevity\\n```"
+      }
+    },
+    "save_session_request": {
+      "action": "save_session",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:33:00Z",
+      "payload": {
+        "file_path": "/Users/rob/Documents/filekitty_session.json"
+      }
+    },
+    "save_session_response": {
+      "action": "save_session",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:33:01Z",
+      "success": true,
+      "payload": {
+        "saved_path": "/Users/rob/Documents/filekitty_session.json"
+      }
+    },
+    "load_session_request": {
+      "action": "load_session",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:34:00Z",
+      "payload": {
+        "file_path": "/Users/rob/Documents/filekitty_session.json"
+      }
+    },
+    "load_session_response": {
+      "action": "load_session",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:34:01Z",
+      "success": true,
+      "payload": {
+        "prompt_session": {
+          "id": "550e8400-e29b-41d4-a716-446655440000",
+          "timestamp": "2025-07-05T14:30:00Z",
+          "files": [
+            "/Users/rob/code/FileKitty/src/filekitty/models.py",
+            "/Users/rob/code/FileKitty/src/filekitty/app_logic.py"
+          ],
+          "file_metadata": [
+            {
+              "path": "/Users/rob/code/FileKitty/src/filekitty/models.py",
+              "display_path": "src/filekitty/models.py",
+              "is_text_file": true,
+              "language": "python",
+              "last_modified": "2025-07-05T14:25:00Z",
+              "file_hash": "abc123def456789012345678901234567890abcdef123456789012345678901234",
+              "size_bytes": 5432
+            }
+          ],
+          "selection_state": {
+            "mode": "Single File",
+            "selected_file": "/Users/rob/code/FileKitty/src/filekitty/models.py",
+            "selected_items": ["PromptSession", "FileMetadata"]
+          },
+          "project_root": "/Users/rob/code/FileKitty",
+          "tree_snapshot": {
+            "base_path": "/Users/rob/code/FileKitty",
+            "base_path_display": "FileKitty/",
+            "ignore_regex": "\\.git|\\.pyc|\\.DS_Store",
+            "rendered": "# Folder Tree of FileKitty/\\n\\n```text\\nFileKitty/\\n├── src/\\n│   └── filekitty/\\n│       ├── models.py\\n│       ├── app_logic.py\\n│       └── __init__.py\\n├── README.md\\n└── pyproject.toml\\n```"
+          },
+          "output_text": "# Filtered content based on selection...",
+          "settings": {
+            "include_tree": true,
+            "tree_base_dir": "/Users/rob/code/FileKitty",
+            "tree_ignore_regex": "\\.git|\\.pyc|\\.DS_Store",
+            "include_date_modified": true,
+            "auto_copy": false,
+            "use_llm_timestamp": false
+          }
+        }
+      }
+    },
+    "error_response": {
+      "action": "process_files",
+      "session_id": "550e8400-e29b-41d4-a716-446655440000",
+      "timestamp": "2025-07-05T14:35:00Z",
+      "success": false,
+      "error": {
+        "type": "FileNotFoundError",
+        "message": "One or more files could not be found",
+        "details": {
+          "missing_files": [
+            "/Users/rob/code/FileKitty/nonexistent.py"
+          ],
+          "accessible_files": [
+            "/Users/rob/code/FileKitty/src/filekitty/models.py"
+          ]
+        }
+      }
+    },
+    "validation_error_response": {
+      "action": "update_selection",
+      "session_id": "invalid-session-id",
+      "timestamp": "2025-07-05T14:36:00Z",
+      "success": false,
+      "error": {
+        "type": "ValidationError",
+        "message": "Invalid session ID format",
+        "details": {
+          "field": "session_id",
+          "expected": "Valid UUID string",
+          "received": "invalid-session-id"
+        }
+      }
+    }
+  }
+}
