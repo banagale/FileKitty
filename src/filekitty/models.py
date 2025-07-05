@@ -3,7 +3,7 @@
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -13,10 +13,10 @@ class FileMetadata:
     path: str
     display_path: str
     is_text_file: bool
-    language: Optional[str] = None
-    last_modified: Optional[datetime] = None
-    file_hash: Optional[str] = None
-    size_bytes: Optional[int] = None
+    language: str | None = None
+    last_modified: datetime | None = None
+    file_hash: str | None = None
+    size_bytes: int | None = None
 
 
 @dataclass
@@ -28,7 +28,7 @@ class TreeSnapshot:
     ignore_regex: str
     rendered: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "base_path": self.base_path,
             "base_path_display": self.base_path_display,
@@ -37,7 +37,7 @@ class TreeSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TreeSnapshot":
+    def from_dict(cls, data: dict[str, Any]) -> "TreeSnapshot":
         return cls(
             base_path=data["base_path"],
             base_path_display=data["base_path_display"],
@@ -51,8 +51,8 @@ class SelectionState:
     """Current file and code selection state."""
 
     mode: str = "All Files"  # "All Files" or "Single File"
-    selected_file: Optional[str] = None
-    selected_items: List[str] = field(default_factory=list)  # Classes/functions
+    selected_file: str | None = None
+    selected_items: list[str] = field(default_factory=list)  # Classes/functions
 
 
 @dataclass
@@ -61,15 +61,15 @@ class PromptSession:
 
     id: str
     timestamp: datetime
-    files: List[str]
-    file_metadata: List[FileMetadata]
+    files: list[str]
+    file_metadata: list[FileMetadata]
     selection_state: SelectionState
-    project_root: Optional[str] = None
-    tree_snapshot: Optional[TreeSnapshot] = None
-    output_text: Optional[str] = None
-    settings: Dict[str, Any] = field(default_factory=dict)
+    project_root: str | None = None
+    tree_snapshot: TreeSnapshot | None = None
+    output_text: str | None = None
+    settings: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "id": self.id,
@@ -99,7 +99,7 @@ class PromptSession:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PromptSession":
+    def from_dict(cls, data: dict[str, Any]) -> "PromptSession":
         """Create from dictionary (JSON deserialization)."""
         file_metadata = []
         for fm_data in data.get("file_metadata", []):
@@ -159,5 +159,5 @@ class PromptSession:
     @classmethod
     def load_from_file(cls, file_path: str) -> "PromptSession":
         """Load session from JSON file."""
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             return cls.from_json(f.read())
