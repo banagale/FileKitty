@@ -12,12 +12,30 @@ python = "^3.12"
 pyqt5 = "^5.15.10"
 setuptools = "==70.3.0" # Keep specific version if needed for py2app compatibility
 rich = "^13"
+tree-sitter = "^0.20.0"
+tree-sitter-python = "^0.20.0"
+tree-sitter-javascript = "^0.20.0"
+tree-sitter-typescript = "^0.20.0"
+tree-sitter-go = "^0.20.0"
+tree-sitter-rust = "^0.20.0"
+tree-sitter-java = "^0.20.0"
+tree-sitter-c = "^0.20.0"
+tree-sitter-cpp = "^0.20.0"
+tree-sitter-c-sharp = "^0.20.0"
+tree-sitter-ruby = "^0.20.0"
+tree-sitter-php = "^0.20.0"
+tree-sitter-bash = "^0.20.0"
 
 [tool.poetry.group.dev.dependencies]
 py2app = "^0.28.7"
 ruff = "^0.9.6"
 pre-commit = "^4.1.0"
 dmgbuild = "^1.6.5"
+pytest = "^7.4.0"
+pytest-qt = "^4.2.0"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.12.0"
+pyfakefs = "^5.3.0"
 
 [build-system]
 requires = ["setuptools", "wheel"]
